@@ -29,12 +29,16 @@ class GitHubMemo {
         // 设备ID
         this.deviceId = this.getDeviceId();
         
-        // 网络状态
-        this.networkStatus = 'unknown';
+        // 网络状态 - 改为更宽松的检测
+        this.networkStatus = 'online'; // 默认假设在线
         this.lastNetworkCheck = 0;
         
         // 调试模式
         this.debugMode = localStorage.getItem('memoDebugMode') === 'true';
+        
+        // 同步队列
+        this.syncQueue = [];
+        this.processingQueue = false;
     }
     
     loadEncryptedConfig() {
@@ -573,19 +577,12 @@ class GitHubMemo {
         console.log('开始从GitHub同步数据...');
         
         try {
-            // 检查网络
-            await this.checkNetwork();
-            
-            if (this.networkStatus !== 'online') {
-                throw new Error('网络不可用');
-            }
-            
             // 获取远程数据
             const remoteData = await this.fetchFromGitHub();
             
             if (!remoteData) {
                 console.log('GitHub上没有数据，上传本地数据');
-                await this.saveDataToGitHub();
+                // 不立即上传，等待用户操作
                 return;
             }
             
@@ -601,9 +598,6 @@ class GitHubMemo {
             
             // 保存合并后的数据到本地
             this.saveLocalData();
-            
-            // 上传合并后的数据到GitHub（如果有更新）
-            await this.saveDataToGitHub();
             
             console.log('数据同步完成');
             this.showNotification('数据同步成功', 'success');
@@ -671,10 +665,11 @@ class GitHubMemo {
         } catch (error) {
             if (error.name === 'AbortError') {
                 console.error('请求超时');
-                throw new Error('请求超时，请检查网络连接');
+                // 不抛出错误，静默失败
+                return null;
             } else {
                 console.error('从GitHub获取数据失败:', error);
-                throw error;
+                return null;
             }
         }
     }
@@ -943,10 +938,8 @@ class GitHubMemo {
         // 保存数据
         this.saveLocalData();
         
-        // 同步到GitHub
-        if (this.config.storageType === 'github') {
-            this.scheduleSync();
-        }
+        // 添加到同步队列
+        this.addToSyncQueue();
         
         this.renderFolders();
         this.hideModal(this.newFolderModal);
@@ -1186,10 +1179,8 @@ class GitHubMemo {
         // 保存数据
         this.saveLocalData();
         
-        // 同步到GitHub
-        if (this.config.storageType === 'github') {
-            this.scheduleSync();
-        }
+        // 添加到同步队列
+        this.addToSyncQueue();
         
         this.closeEditor();
         
@@ -1198,22 +1189,15 @@ class GitHubMemo {
     
     async saveDataToGitHub() {
         if (this.config.storageType !== 'github' || !this.config.token) {
-            return;
+            return null;
         }
         
-        console.log('保存数据到GitHub...');
+        console.log('尝试保存数据到GitHub...');
         
         const { username, repo } = this.config;
         const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
         
         try {
-            // 检查网络
-            await this.checkNetwork();
-            
-            if (this.networkStatus !== 'online') {
-                throw new Error('网络不可用，无法同步到GitHub');
-            }
-            
             // 准备数据
             const data = {
                 folders: this.folders,
@@ -1231,7 +1215,7 @@ class GitHubMemo {
             let existingFile = false;
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                const timeoutId = setTimeout(() => controller.abort(), 8000);
                 
                 const response = await fetch(apiUrl, {
                     signal: controller.signal,
@@ -1253,13 +1237,12 @@ class GitHubMemo {
                 } else if (response.status === 404) {
                     console.log('文件不存在，将创建新文件');
                 } else {
-                    const errorText = await response.text();
-                    console.error('获取文件信息失败:', response.status, errorText);
+                    // 静默处理其他错误
+                    console.log('获取文件信息失败:', response.status);
                 }
             } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.warn('获取文件SHA失败，尝试创建新文件:', error.message);
-                }
+                // 静默处理获取SHA的错误
+                console.log('获取SHA失败，继续尝试保存');
             }
             
             const body = {
@@ -1323,7 +1306,7 @@ class GitHubMemo {
             }
             
         } catch (error) {
-            console.error('保存到GitHub失败:', error);
+            console.error('保存到GitHub失败:', error.message);
             throw error;
         }
     }
@@ -1342,53 +1325,102 @@ class GitHubMemo {
         console.log('数据已保存到本地存储');
     }
     
-    // 网络监控
+    // 添加到同步队列
+    addToSyncQueue() {
+        if (this.config.storageType !== 'github') {
+            return;
+        }
+        
+        // 添加时间戳标记
+        const syncItem = {
+            timestamp: Date.now(),
+            dataVersion: this.dataVersion
+        };
+        
+        this.syncQueue.push(syncItem);
+        
+        // 如果队列不为空且不在处理中，开始处理
+        if (!this.processingQueue && this.syncQueue.length > 0) {
+            this.processSyncQueue();
+        }
+    }
+    
+    // 处理同步队列
+    async processSyncQueue() {
+        if (this.processingQueue || this.syncQueue.length === 0) {
+            return;
+        }
+        
+        this.processingQueue = true;
+        
+        try {
+            // 获取队列中的第一个任务
+            const syncItem = this.syncQueue.shift();
+            
+            console.log('处理同步任务:', syncItem);
+            
+            // 尝试同步到GitHub
+            await this.saveDataToGitHub();
+            
+            this.showNotification('数据已同步到云端', 'success');
+            
+        } catch (error) {
+            console.error('同步失败:', error.message);
+            
+            // 不显示错误通知，避免打扰用户
+            if (this.debugMode) {
+                this.showNotification(`同步失败: ${error.message}`, 'error');
+            }
+            
+            // 将任务放回队列，稍后重试
+            setTimeout(() => {
+                this.syncQueue.unshift(syncItem);
+                this.processingQueue = false;
+                
+                // 5秒后重试
+                setTimeout(() => this.processSyncQueue(), 5000);
+            }, 1000);
+            
+            return;
+        }
+        
+        this.processingQueue = false;
+        
+        // 处理队列中的下一个任务
+        if (this.syncQueue.length > 0) {
+            setTimeout(() => this.processSyncQueue(), 1000);
+        }
+    }
+    
+    // 网络监控（简化版）
     startNetworkMonitoring() {
         // 监听网络状态变化
         window.addEventListener('online', () => {
-            this.networkStatus = 'online';
             console.log('网络已连接');
             this.showNotification('网络已连接', 'success');
             
             // 网络恢复后尝试同步
-            if (this.config.storageType === 'github') {
-                this.scheduleSync();
+            if (this.config.storageType === 'github' && this.syncQueue.length > 0) {
+                this.processSyncQueue();
             }
         });
         
         window.addEventListener('offline', () => {
-            this.networkStatus = 'offline';
             console.log('网络已断开');
             this.showNotification('网络已断开', 'error');
         });
-        
-        // 初始检查
-        this.checkNetwork();
     }
     
+    // 简化网络检查 - 只在需要时检查
     async checkNetwork() {
-        const now = Date.now();
-        
-        // 避免频繁检查（至少间隔5秒）
-        if (now - this.lastNetworkCheck < 5000) {
-            return this.networkStatus;
-        }
-        
-        this.lastNetworkCheck = now;
-        
-        try {
-            // 简单检查网络连接
-            const response = await fetch('https://api.github.com', {
-                method: 'HEAD',
-                cache: 'no-cache'
-            });
-            
-            this.networkStatus = response.ok ? 'online' : 'offline';
-        } catch (error) {
-            this.networkStatus = 'offline';
-        }
-        
-        return this.networkStatus;
+        return new Promise((resolve) => {
+            // 使用浏览器内置的在线状态
+            if (navigator.onLine) {
+                resolve('online');
+            } else {
+                resolve('offline');
+            }
+        });
     }
     
     // 启动自动同步
@@ -1398,14 +1430,14 @@ class GitHubMemo {
             clearInterval(this.autoSyncInterval);
         }
         
-        // 每60秒检查一次同步
+        // 每60秒尝试同步一次
         this.autoSyncInterval = setInterval(() => {
             this.autoSync();
         }, 60000); // 60秒
     }
     
     async autoSync() {
-        if (this.syncing) {
+        if (this.syncing || this.processingQueue) {
             if (this.debugMode) console.log('同步进行中，跳过本次');
             return;
         }
@@ -1461,38 +1493,9 @@ class GitHubMemo {
                 setTimeout(() => this.autoSync(), delay);
             } else {
                 console.log('达到最大重试次数，停止自动同步');
-                this.showNotification('同步失败，请检查网络和Token', 'error');
-            }
-        }
-    }
-    
-    // 调度同步
-    scheduleSync() {
-        if (this.syncing) {
-            if (this.debugMode) console.log('同步进行中，延迟执行');
-            setTimeout(() => this.scheduleSync(), 2000);
-            return;
-        }
-        
-        console.log('调度同步...');
-        
-        // 立即执行同步
-        setTimeout(async () => {
-            try {
-                await this.saveDataToGitHub();
-                this.showNotification('数据已同步到云端', 'success');
-            } catch (error) {
-                console.error('同步失败:', error.message);
-                
                 // 不显示错误通知，避免打扰用户
-                if (this.debugMode) {
-                    this.showNotification(`同步失败: ${error.message}`, 'error');
-                }
-                
-                // 5秒后重试
-                setTimeout(() => this.scheduleSync(), 5000);
             }
-        }, 1000);
+        }
     }
     
     // 删除文件夹
@@ -1548,10 +1551,8 @@ class GitHubMemo {
         this.pendingDelete = { type: null, id: null };
         this.hideModal(this.confirmModal);
         
-        // 立即同步
-        if (this.config.storageType === 'github') {
-            this.scheduleSync();
-        }
+        // 添加到同步队列
+        this.addToSyncQueue();
     }
     
     deleteFolder(folderId) {
@@ -1725,7 +1726,7 @@ class GitHubMemo {
                 密码数: this.folderPasswords.size,
                 数据版本: this.dataVersion,
                 设备ID: this.deviceId,
-                网络状态: this.networkStatus
+                同步队列: this.syncQueue.length
             });
         }
     }
