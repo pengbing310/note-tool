@@ -50,36 +50,6 @@ header {
     font-size: 0.95rem;
 }
 
-/* 配置状态样式 */
-.config-status {
-    position: absolute;
-    top: 0;
-    right: 1rem;
-}
-
-.storage-info {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: white;
-    font-size: 0.85rem;
-    opacity: 0.9;
-}
-
-.storage-type {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    background: rgba(255, 255, 255, 0.2);
-    padding: 4px 12px;
-    border-radius: 20px;
-}
-
-.btn-sm {
-    padding: 4px 12px;
-    font-size: 0.85rem;
-}
-
 /* 主内容区 */
 .main-content {
     display: flex;
@@ -343,11 +313,12 @@ header {
     color: #7f8c8d;
 }
 
-/* 编辑器 */
+/* 编辑器 - 修复输入框太小的问题 */
 .editor-view {
     height: 100%;
     display: flex;
     flex-direction: column;
+    width: 100%;
 }
 
 .editor-container {
@@ -360,6 +331,7 @@ header {
     box-shadow: 0 2px 15px rgba(0,0,0,0.05);
     overflow: hidden;
     animation: slideIn 0.3s ease-out;
+    width: calc(100% - 2rem); /* 确保宽度正确 */
 }
 
 @keyframes slideIn {
@@ -373,22 +345,26 @@ header {
     }
 }
 
-/* 标题栏 - 优化宽度和高度 */
+/* 标题栏 - 修复：增大输入框 */
 .title-bar {
     padding: 1.25rem 1.5rem;
     background: #f8f9fa;
     border-bottom: 1px solid #e0e0e0;
+    flex-shrink: 0; /* 防止被压缩 */
 }
 
 .title-input {
     width: 100%;
-    font-size: 1.5rem;
+    font-size: 1.8rem !important; /* 增大字体 */
     font-weight: 600;
-    padding: 0.75rem 1rem;
+    padding: 1rem 1.2rem !important; /* 增大内边距 */
     border: 2px solid #e0e0e0;
-    border-radius: 8px;
+    border-radius: 10px;
     background: white;
     transition: all 0.2s;
+    min-height: 60px !important; /* 确保最小高度 */
+    box-sizing: border-box;
+    line-height: 1.4;
 }
 
 .title-input:focus {
@@ -397,38 +373,42 @@ header {
     box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
-/* 内容区域包装器 */
+/* 内容区域包装器 - 修复：确保足够的空间 */
 .content-area-wrapper {
     flex: 1;
     padding: 0 1.5rem;
-    min-height: 400px; /* 确保最小高度 */
+    min-height: 500px; /* 增加最小高度 */
+    display: flex;
+    flex-direction: column;
 }
 
-/* 内容文本框 - 优化大小 */
+/* 内容文本框 - 修复：增大输入区域 */
 .content-textarea {
     width: 100%;
-    height: 100%;
-    min-height: 400px; /* 电脑端最小高度 */
-    padding: 1.5rem;
-    font-size: 1.1rem;
-    line-height: 1.7;
-    border: none;
-    border-radius: 8px;
+    flex: 1;
+    min-height: 500px !important; /* 增大最小高度 */
+    padding: 1.5rem !important;
+    font-size: 1.2rem !important; /* 增大字体 */
+    line-height: 1.8;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
     resize: vertical;
     font-family: inherit;
-    background: #fafbfc;
+    background: white;
     transition: all 0.2s;
+    box-sizing: border-box;
 }
 
 .content-textarea:focus {
     outline: none;
-    background: white;
-    box-shadow: inset 0 0 0 2px #3498db;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
 .content-textarea::placeholder {
     color: #95a5a6;
     opacity: 0.7;
+    font-size: 1.2rem;
 }
 
 /* 编辑器底部 */
@@ -439,6 +419,7 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .editor-info {
@@ -549,7 +530,7 @@ header {
     background: white;
     border-radius: 12px;
     z-index: 1001;
-    min-width: 400px; /* 修复：增加最小宽度 */
+    min-width: 450px;
     max-width: 500px;
     max-height: 90vh;
     overflow-y: auto;
@@ -586,7 +567,7 @@ header {
     font-size: 1.4rem;
 }
 
-/* 模态框内的表单样式 - 修复输入框大小 */
+/* 模态框内的表单样式 */
 .modal .form-group {
     margin-bottom: 1.5rem;
 }
@@ -606,7 +587,8 @@ header {
     border-radius: 8px;
     font-size: 1rem;
     transition: border-color 0.2s;
-    min-height: 46px; /* 修复：确保足够的高度 */
+    min-height: 48px;
+    box-sizing: border-box;
 }
 
 .modal .form-control:focus {
@@ -685,7 +667,7 @@ header {
     font-size: 1.1rem;
     color: #2d3748;
     line-height: 1.6;
-    white-space: pre-line; /* 保留换行符 */
+    white-space: pre-line;
 }
 
 #confirmDeleteBtn {
@@ -735,21 +717,24 @@ header {
     
     .editor-container {
         margin: 0.75rem;
+        width: calc(100% - 1.5rem);
     }
     
     .title-input {
-        font-size: 1.3rem;
-        padding: 0.625rem 0.875rem;
+        font-size: 1.5rem !important;
+        padding: 0.875rem 1rem !important;
+        min-height: 54px !important;
     }
     
     .content-area-wrapper {
         padding: 0 1rem;
+        min-height: 400px;
     }
     
     .content-textarea {
-        min-height: 300px; /* 手机端最小高度 */
-        padding: 1rem;
-        font-size: 1rem;
+        min-height: 400px !important;
+        padding: 1.25rem !important;
+        font-size: 1.1rem !important;
     }
     
     .editor-footer {
@@ -773,7 +758,7 @@ header {
     }
     
     .modal {
-        min-width: 90% !important; /* 修复：响应式调整 */
+        min-width: 90% !important;
         max-width: 95% !important;
         padding: 1.5rem;
         margin: 10px;
@@ -791,25 +776,6 @@ header {
     
     .folder-delete-btn {
         opacity: 1;
-    }
-    
-    .config-status {
-        position: static;
-        margin-top: 10px;
-    }
-    
-    .storage-info {
-        justify-content: center;
-    }
-    
-    /* 手机端模态框调整 */
-    .modal .form-control {
-        padding: 0.75rem 0.875rem;
-        font-size: 16px; /* 防止iOS缩放 */
-    }
-    
-    .modal-content {
-        padding: 1.5rem;
     }
 }
 
@@ -841,8 +807,14 @@ header {
         font-size: 0.95rem;
     }
     
+    .title-input {
+        font-size: 1.3rem !important;
+        min-height: 48px !important;
+    }
+    
     .content-textarea {
-        min-height: 250px;
+        min-height: 350px !important;
+        font-size: 1rem !important;
     }
     
     .modal-content h3 {
@@ -855,27 +827,5 @@ header {
     
     .modal-actions .btn {
         width: 100%;
-    }
-}
-
-/* 高分辨率适配 */
-@media (min-width: 1920px) {
-    .container {
-        max-width: 1600px;
-        margin: 0 auto;
-    }
-    
-    .content-textarea {
-        min-height: 500px;
-        font-size: 1.2rem;
-    }
-    
-    .memo-card {
-        height: 200px;
-    }
-    
-    .modal {
-        min-width: 450px;
-        max-width: 550px;
     }
 }
