@@ -17,10 +17,11 @@ class GitHubMemo {
         
         // 同步相关
         this.syncInterval = null;
+        this.autoSyncInterval = null;
         this.lastSyncTime = 0;
-        this.lastRemoteHash = '';
         this.syncing = false;
         this.retryCount = 0;
+        this.maxRetries = 3;
         
         // 数据版本
         this.dataVersion = 0;
@@ -28,8 +29,12 @@ class GitHubMemo {
         // 设备ID
         this.deviceId = this.getDeviceId();
         
-        // 修改历史（用于冲突解决）
-        this.modificationHistory = [];
+        // 网络状态
+        this.networkStatus = 'unknown';
+        this.lastNetworkCheck = 0;
+        
+        // 调试模式
+        this.debugMode = localStorage.getItem('memoDebugMode') === 'true';
     }
     
     loadEncryptedConfig() {
@@ -273,6 +278,9 @@ class GitHubMemo {
         this.bindEvents();
         this.loadData();
         
+        // 启动网络监控
+        this.startNetworkMonitoring();
+        
         // 启动自动同步（GitHub模式）
         if (this.config.storageType === 'github') {
             this.startAutoSync();
@@ -508,9 +516,14 @@ class GitHubMemo {
             // 首先加载本地数据
             await this.loadLocalData();
             
-            // 如果是GitHub存储模式，同步远程数据
+            // 如果是GitHub存储模式，尝试同步远程数据
             if (this.config.storageType === 'github') {
-                await this.syncFromGitHub();
+                try {
+                    await this.syncFromGitHub();
+                } catch (syncError) {
+                    console.warn('GitHub同步失败，使用本地数据:', syncError.message);
+                    // 继续使用本地数据
+                }
             }
             
             this.renderFolders();
@@ -518,11 +531,7 @@ class GitHubMemo {
             console.log('数据加载完成');
             
             // 显示数据统计
-            console.log('数据统计:', {
-                文件夹数: this.folders.length,
-                备忘录数: this.memos.length,
-                密码数: this.folderPasswords.size
-            });
+            this.logDataStats();
             
         } catch (error) {
             console.error('加载数据失败:', error);
@@ -564,6 +573,13 @@ class GitHubMemo {
         console.log('开始从GitHub同步数据...');
         
         try {
+            // 检查网络
+            await this.checkNetwork();
+            
+            if (this.networkStatus !== 'online') {
+                throw new Error('网络不可用');
+            }
+            
             // 获取远程数据
             const remoteData = await this.fetchFromGitHub();
             
@@ -573,21 +589,20 @@ class GitHubMemo {
                 return;
             }
             
-            // 记录修改历史
-            this.recordModification('sync_start', {
+            console.log('获取到远程数据，开始合并...', {
+                localVersion: this.dataVersion,
+                remoteVersion: remoteData.version,
                 localFolders: this.folders.length,
-                localMemos: this.memos.length,
-                remoteFolders: remoteData.folders.length,
-                remoteMemos: remoteData.memos.length
+                remoteFolders: remoteData.folders?.length || 0
             });
             
-            // 合并数据（优先远程数据）
+            // 合并数据
             await this.mergeData(remoteData);
             
             // 保存合并后的数据到本地
             this.saveLocalData();
             
-            // 上传合并后的数据到GitHub
+            // 上传合并后的数据到GitHub（如果有更新）
             await this.saveDataToGitHub();
             
             console.log('数据同步完成');
@@ -595,29 +610,33 @@ class GitHubMemo {
             
         } catch (error) {
             console.error('同步失败:', error);
-            this.showNotification('同步失败，使用本地数据', 'error');
+            throw error;
         }
     }
     
     async fetchFromGitHub() {
         const { username, repo } = this.config;
         if (!username || !repo || !this.config.token) {
+            console.log('GitHub配置不完整');
             return null;
         }
         
-        // 使用不同的URL避免缓存
-        const timestamp = Date.now();
-        const url = `https://api.github.com/repos/${username}/${repo}/contents/data.json?t=${timestamp}`;
+        const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
         
         try {
-            const response = await fetch(url, {
+            // 添加超时控制
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+            
+            const response = await fetch(apiUrl, {
+                signal: controller.signal,
                 headers: {
                     'Authorization': `token ${this.config.token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache'
+                    'Accept': 'application/vnd.github.v3+json'
                 }
             });
+            
+            clearTimeout(timeoutId);
             
             if (response.ok) {
                 const fileInfo = await response.json();
@@ -626,7 +645,7 @@ class GitHubMemo {
                     const data = JSON.parse(content);
                     
                     console.log('从GitHub获取数据成功:', {
-                        sha: fileInfo.sha.substring(0, 8),
+                        sha: fileInfo.sha?.substring(0, 8) || 'unknown',
                         文件夹数: data.folders?.length || 0,
                         备忘录数: data.memos?.length || 0,
                         版本: data.version || 0
@@ -637,13 +656,22 @@ class GitHubMemo {
             } else if (response.status === 404) {
                 console.log('GitHub上没有数据文件');
                 return null;
+            } else if (response.status === 401 || response.status === 403) {
+                console.error('GitHub认证失败，请检查Token');
+                this.showNotification('GitHub认证失败，请检查Token', 'error');
+                return null;
             } else {
                 console.error('GitHub API错误:', response.status, response.statusText);
                 return null;
             }
         } catch (error) {
-            console.error('从GitHub获取数据失败:', error);
-            return null;
+            if (error.name === 'AbortError') {
+                console.error('请求超时');
+                throw new Error('请求超时，请检查网络连接');
+            } else {
+                console.error('从GitHub获取数据失败:', error);
+                throw error;
+            }
         }
         
         return null;
@@ -749,33 +777,14 @@ class GitHubMemo {
         
         this.folderPasswords = mergedPasswords;
         
-        // 使用远程版本号（如果更高）
-        if (remoteData.version > this.dataVersion) {
-            this.dataVersion = remoteData.version;
-        }
+        // 使用更高的版本号
+        this.dataVersion = Math.max(this.dataVersion, remoteData.version || 0);
         
         console.log('数据合并完成:', {
             合并后文件夹: this.folders.length,
             合并后备忘录: this.memos.length,
             最终版本: this.dataVersion
         });
-    }
-    
-    // 记录修改历史
-    recordModification(type, data) {
-        const entry = {
-            type,
-            data,
-            timestamp: new Date().toISOString(),
-            deviceId: this.deviceId
-        };
-        
-        this.modificationHistory.unshift(entry);
-        
-        // 只保留最近100条记录
-        if (this.modificationHistory.length > 100) {
-            this.modificationHistory.pop();
-        }
     }
     
     // 获取设备ID
@@ -928,9 +937,6 @@ class GitHubMemo {
         if (visibilityValue === 'private' && password) {
             this.folderPasswords.set(folder.id, btoa(password));
         }
-        
-        // 记录修改
-        this.recordModification('create_folder', { folderId: folder.id, name: folder.name });
         
         // 保存数据
         this.saveLocalData();
@@ -1167,13 +1173,6 @@ class GitHubMemo {
         console.log('保存备忘录');
         if (!this.currentMemo) return;
         
-        // 记录修改
-        this.recordModification('save_memo', { 
-            memoId: this.currentMemo.id,
-            title: this.currentMemo.title,
-            contentLength: this.currentMemo.content.length
-        });
-        
         // 如果是新备忘录，添加到列表
         const existingIndex = this.memos.findIndex(m => m.id === this.currentMemo.id);
         if (existingIndex === -1) {
@@ -1206,6 +1205,13 @@ class GitHubMemo {
         const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
         
         try {
+            // 检查网络
+            await this.checkNetwork();
+            
+            if (this.networkStatus !== 'online') {
+                throw new Error('网络不可用，无法同步到GitHub');
+            }
+            
             // 准备数据
             const data = {
                 folders: this.folders,
@@ -1213,8 +1219,7 @@ class GitHubMemo {
                 passwords: Array.from(this.folderPasswords.entries()),
                 lastUpdated: new Date().toISOString(),
                 version: this.dataVersion + 1,
-                deviceId: this.deviceId,
-                modificationHistory: this.modificationHistory.slice(0, 10) // 只上传最近的修改记录
+                deviceId: this.deviceId
             };
             
             const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
@@ -1222,12 +1227,18 @@ class GitHubMemo {
             // 先获取文件SHA（如果存在）
             let sha = null;
             try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                
                 const response = await fetch(apiUrl, {
+                    signal: controller.signal,
                     headers: { 
                         'Authorization': `token ${this.config.token}`,
                         'Accept': 'application/vnd.github.v3+json'
                     }
                 });
+                
+                clearTimeout(timeoutId);
                 
                 if (response.ok) {
                     const fileInfo = await response.json();
@@ -1235,6 +1246,7 @@ class GitHubMemo {
                 }
             } catch (error) {
                 // 文件不存在，创建新文件
+                console.log('文件不存在，将创建新文件');
             }
             
             const body = {
@@ -1243,8 +1255,12 @@ class GitHubMemo {
                 sha: sha
             };
             
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
             const response = await fetch(apiUrl, {
                 method: 'PUT',
+                signal: controller.signal,
                 headers: {
                     'Authorization': `token ${this.config.token}`,
                     'Content-Type': 'application/json',
@@ -1253,6 +1269,8 @@ class GitHubMemo {
                 body: JSON.stringify(body)
             });
             
+            clearTimeout(timeoutId);
+            
             if (response.ok) {
                 const result = await response.json();
                 this.dataVersion++;
@@ -1260,7 +1278,7 @@ class GitHubMemo {
                 this.updateLastSync();
                 
                 console.log('数据保存到GitHub成功:', {
-                    sha: result.sha.substring(0, 8),
+                    sha: result.sha?.substring(0, 8) || 'unknown',
                     版本: this.dataVersion
                 });
                 
@@ -1290,26 +1308,82 @@ class GitHubMemo {
         console.log('数据已保存到本地存储');
     }
     
+    // 网络监控
+    startNetworkMonitoring() {
+        // 监听网络状态变化
+        window.addEventListener('online', () => {
+            this.networkStatus = 'online';
+            console.log('网络已连接');
+            this.showNotification('网络已连接', 'success');
+            
+            // 网络恢复后尝试同步
+            if (this.config.storageType === 'github') {
+                this.scheduleSync();
+            }
+        });
+        
+        window.addEventListener('offline', () => {
+            this.networkStatus = 'offline';
+            console.log('网络已断开');
+            this.showNotification('网络已断开', 'error');
+        });
+        
+        // 初始检查
+        this.checkNetwork();
+    }
+    
+    async checkNetwork() {
+        const now = Date.now();
+        
+        // 避免频繁检查（至少间隔5秒）
+        if (now - this.lastNetworkCheck < 5000) {
+            return this.networkStatus;
+        }
+        
+        this.lastNetworkCheck = now;
+        
+        try {
+            // 简单检查网络连接
+            const response = await fetch('https://api.github.com', {
+                method: 'HEAD',
+                cache: 'no-cache'
+            });
+            
+            this.networkStatus = response.ok ? 'online' : 'offline';
+        } catch (error) {
+            this.networkStatus = 'offline';
+        }
+        
+        return this.networkStatus;
+    }
+    
     // 启动自动同步
     startAutoSync() {
         // 清除之前的定时器
-        if (this.syncInterval) {
-            clearInterval(this.syncInterval);
+        if (this.autoSyncInterval) {
+            clearInterval(this.autoSyncInterval);
         }
         
-        // 每30秒检查一次同步
-        this.syncInterval = setInterval(() => {
+        // 每60秒检查一次同步
+        this.autoSyncInterval = setInterval(() => {
             this.autoSync();
-        }, 30000); // 30秒
+        }, 60000); // 60秒
     }
     
     async autoSync() {
         if (this.syncing) {
-            console.log('同步进行中，跳过本次');
+            if (this.debugMode) console.log('同步进行中，跳过本次');
             return;
         }
         
         if (this.config.storageType !== 'github') {
+            return;
+        }
+        
+        // 检查网络
+        const networkStatus = await this.checkNetwork();
+        if (networkStatus !== 'online') {
+            if (this.debugMode) console.log('网络不可用，跳过同步');
             return;
         }
         
@@ -1341,13 +1415,19 @@ class GitHubMemo {
             this.retryCount = 0;
             
         } catch (error) {
-            console.error('自动同步失败:', error);
+            console.error('自动同步失败:', error.message);
             this.syncing = false;
             this.retryCount++;
             
-            // 重试逻辑
-            if (this.retryCount < 3) {
-                setTimeout(() => this.autoSync(), 5000 * this.retryCount);
+            // 重试逻辑（最多3次）
+            if (this.retryCount <= this.maxRetries) {
+                const delay = Math.min(30000, 5000 * Math.pow(2, this.retryCount - 1));
+                console.log(`将在${delay/1000}秒后重试 (${this.retryCount}/${this.maxRetries})`);
+                
+                setTimeout(() => this.autoSync(), delay);
+            } else {
+                console.log('达到最大重试次数，停止自动同步');
+                this.showNotification('同步失败，请检查网络和Token', 'error');
             }
         }
     }
@@ -1355,7 +1435,7 @@ class GitHubMemo {
     // 调度同步
     scheduleSync() {
         if (this.syncing) {
-            console.log('同步进行中，延迟执行');
+            if (this.debugMode) console.log('同步进行中，延迟执行');
             setTimeout(() => this.scheduleSync(), 2000);
             return;
         }
@@ -1368,10 +1448,14 @@ class GitHubMemo {
                 await this.saveDataToGitHub();
                 this.showNotification('数据已同步到云端', 'success');
             } catch (error) {
-                console.error('同步失败:', error);
-                this.showNotification('同步失败，请检查网络', 'error');
+                console.error('同步失败:', error.message);
                 
-                // 重试
+                // 不显示错误通知，避免打扰用户
+                if (this.debugMode) {
+                    this.showNotification(`同步失败: ${error.message}`, 'error');
+                }
+                
+                // 5秒后重试
                 setTimeout(() => this.scheduleSync(), 5000);
             }
         }, 1000);
@@ -1437,15 +1521,6 @@ class GitHubMemo {
     }
     
     deleteFolder(folderId) {
-        // 记录删除
-        const folder = this.folders.find(f => f.id === folderId);
-        if (folder) {
-            this.recordModification('delete_folder', { 
-                folderId: folder.id, 
-                name: folder.name 
-            });
-        }
-        
         // 删除文件夹
         this.folders = this.folders.filter(f => f.id !== folderId);
         
@@ -1489,16 +1564,6 @@ class GitHubMemo {
     }
     
     deleteMemo(memoId) {
-        const memo = this.memos.find(m => m.id === memoId);
-        
-        // 记录删除
-        if (memo) {
-            this.recordModification('delete_memo', { 
-                memoId: memo.id, 
-                title: memo.title 
-            });
-        }
-        
         // 删除备忘录
         this.memos = this.memos.filter(m => m.id !== memoId);
         
@@ -1615,6 +1680,20 @@ class GitHubMemo {
                 }, 300);
             }
         }, duration);
+    }
+    
+    // 记录数据统计
+    logDataStats() {
+        if (this.debugMode) {
+            console.log('数据统计:', {
+                文件夹数: this.folders.length,
+                备忘录数: this.memos.length,
+                密码数: this.folderPasswords.size,
+                数据版本: this.dataVersion,
+                设备ID: this.deviceId,
+                网络状态: this.networkStatus
+            });
+        }
     }
     
     escapeHtml(text) {
