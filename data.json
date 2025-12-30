@@ -9,20 +9,28 @@
       "deviceId": "device_1767079223172_97399cf6u"
     }
   ],
-  "memos": [],
-  "passwords": [],
-  "lastUpdated": "2025-12-30T07:38:54.004Z",
-  "version": 12,
-  "deviceId": "device_1767079223172_97399cf6u",
-  "modificationHistory": [
+  "memos": [
     {
-      "type": "create_folder",
-      "data": {
-        "folderId": "1767080257965",
-        "name": "成本优化"
-      },
-      "timestamp": "2025-12-30T07:37:37.965Z",
+      "id": "1767081679331",
+      "folderId": "1767080257965",
+      "title": "电脑端",
+      "content": "电脑端",
+      "createdAt": "2025-12-30T08:01:19.331Z",
+      "updatedAt": "2025-12-30T08:01:26.302Z",
+      "deviceId": "device_1767079223172_97399cf6u"
+    },
+    {
+      "id": "1767081075645",
+      "folderId": "1767080257965",
+      "title": "新的",
+      "content": "电脑端",
+      "createdAt": "2025-12-30T07:51:15.645Z",
+      "updatedAt": "2025-12-30T07:51:30.982Z",
       "deviceId": "device_1767079223172_97399cf6u"
     }
-  ]
+  ],
+  "passwords": [],
+  "lastUpdated": "2025-12-30T08:21:52.844Z",
+  "version": 13,
+  "deviceId": "device_1767079223172_97399cf6u"
 }
