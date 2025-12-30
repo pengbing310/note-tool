@@ -37,46 +37,8 @@
     }
   ],
   "passwords": [],
-  "lastUpdated": "2025-12-30T07:23:48.194Z",
-  "version": 18,
+  "lastUpdated": "2025-12-30T07:23:54.165Z",
+  "version": 15,
   "deviceId": "device_1767078289525_79y4vh0je",
-  "modificationHistory": [
-    {
-      "type": "create_folder",
-      "data": {
-        "folderId": "1767079418529",
-        "name": "145"
-      },
-      "timestamp": "2025-12-30T07:23:38.529Z",
-      "deviceId": "device_1767078289525_79y4vh0je"
-    },
-    {
-      "type": "create_folder",
-      "data": {
-        "folderId": "1767079411473",
-        "name": "111"
-      },
-      "timestamp": "2025-12-30T07:23:31.473Z",
-      "deviceId": "device_1767078289525_79y4vh0je"
-    },
-    {
-      "type": "save_memo",
-      "data": {
-        "memoId": "1767079344341",
-        "title": "手机",
-        "contentLength": 3
-      },
-      "timestamp": "2025-12-30T07:22:37.928Z",
-      "deviceId": "device_1767078289525_79y4vh0je"
-    },
-    {
-      "type": "create_folder",
-      "data": {
-        "folderId": "1767079339208",
-        "name": "普通"
-      },
-      "timestamp": "2025-12-30T07:22:19.208Z",
-      "deviceId": "device_1767078289525_79y4vh0je"
-    }
-  ]
+  "modificationHistory": []
 }
