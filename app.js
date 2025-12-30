@@ -128,7 +128,7 @@ class GitHubMemo {
     }
     
     clearUrlParams() {
-        // 清除URL参数，避免刷新时重复加载
+        // 清除URL参数，避免重复加载
         if (window.history.replaceState) {
             const url = new URL(window.location);
             url.searchParams.delete('config');
@@ -640,18 +640,21 @@ class GitHubMemo {
             
             if (response.ok) {
                 const fileInfo = await response.json();
-                if (fileInfo.content) {
+                if (fileInfo && fileInfo.content) {
                     const content = atob(fileInfo.content.replace(/\n/g, ''));
                     const data = JSON.parse(content);
                     
                     console.log('从GitHub获取数据成功:', {
-                        sha: fileInfo.sha?.substring(0, 8) || 'unknown',
+                        sha: fileInfo.sha ? fileInfo.sha.substring(0, 8) : 'unknown',
                         文件夹数: data.folders?.length || 0,
                         备忘录数: data.memos?.length || 0,
                         版本: data.version || 0
                     });
                     
                     return data;
+                } else {
+                    console.log('GitHub返回的数据格式不正确');
+                    return null;
                 }
             } else if (response.status === 404) {
                 console.log('GitHub上没有数据文件');
@@ -661,7 +664,8 @@ class GitHubMemo {
                 this.showNotification('GitHub认证失败，请检查Token', 'error');
                 return null;
             } else {
-                console.error('GitHub API错误:', response.status, response.statusText);
+                const errorText = await response.text();
+                console.error('GitHub API错误:', response.status, response.statusText, errorText);
                 return null;
             }
         } catch (error) {
@@ -673,8 +677,6 @@ class GitHubMemo {
                 throw error;
             }
         }
-        
-        return null;
     }
     
     // 改进的数据合并方法
@@ -1226,6 +1228,7 @@ class GitHubMemo {
             
             // 先获取文件SHA（如果存在）
             let sha = null;
+            let existingFile = false;
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -1242,21 +1245,35 @@ class GitHubMemo {
                 
                 if (response.ok) {
                     const fileInfo = await response.json();
-                    sha = fileInfo.sha;
+                    if (fileInfo && fileInfo.sha) {
+                        sha = fileInfo.sha;
+                        existingFile = true;
+                        console.log('获取到现有文件SHA:', sha.substring(0, 8));
+                    }
+                } else if (response.status === 404) {
+                    console.log('文件不存在，将创建新文件');
+                } else {
+                    const errorText = await response.text();
+                    console.error('获取文件信息失败:', response.status, errorText);
                 }
             } catch (error) {
-                // 文件不存在，创建新文件
-                console.log('文件不存在，将创建新文件');
+                if (error.name !== 'AbortError') {
+                    console.warn('获取文件SHA失败，尝试创建新文件:', error.message);
+                }
             }
             
             const body = {
                 message: `Update memo data ${new Date().toISOString()}`,
-                content: content,
-                sha: sha
+                content: content
             };
             
+            // 只有存在文件时才需要sha
+            if (sha) {
+                body.sha = sha;
+            }
+            
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
             
             const response = await fetch(apiUrl, {
                 method: 'PUT',
@@ -1273,19 +1290,36 @@ class GitHubMemo {
             
             if (response.ok) {
                 const result = await response.json();
+                
+                // 安全地处理结果
+                if (result && result.sha) {
+                    console.log('数据保存到GitHub成功:', {
+                        sha: result.sha.substring(0, 8),
+                        版本: this.dataVersion + 1,
+                        操作: existingFile ? '更新' : '创建'
+                    });
+                } else {
+                    console.log('数据保存到GitHub成功，但未获取到SHA');
+                }
+                
                 this.dataVersion++;
                 this.lastSyncTime = Date.now();
                 this.updateLastSync();
                 
-                console.log('数据保存到GitHub成功:', {
-                    sha: result.sha?.substring(0, 8) || 'unknown',
-                    版本: this.dataVersion
-                });
-                
                 return result;
             } else {
-                const error = await response.json();
-                throw new Error(error.message || 'GitHub保存失败');
+                let errorMessage = 'GitHub保存失败';
+                try {
+                    const errorData = await response.json();
+                    if (errorData && errorData.message) {
+                        errorMessage = errorData.message;
+                    }
+                } catch (e) {
+                    // 忽略JSON解析错误
+                }
+                
+                console.error('GitHub API错误:', response.status, response.statusText, errorMessage);
+                throw new Error(`GitHub保存失败: ${errorMessage}`);
             }
             
         } catch (error) {
