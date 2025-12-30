@@ -9,12 +9,32 @@
       "deviceId": "device_1767078289525_79y4vh0je"
     }
   ],
-  "memos": [],
+  "memos": [
+    {
+      "id": "1767079344341",
+      "folderId": "1767079339208",
+      "title": "手机",
+      "content": "手机端",
+      "createdAt": "2025-12-30T07:22:24.341Z",
+      "updatedAt": "2025-12-30T07:22:36.585Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    }
+  ],
   "passwords": [],
-  "lastUpdated": "2025-12-30T07:22:34.512Z",
-  "version": 4,
+  "lastUpdated": "2025-12-30T07:22:38.929Z",
+  "version": 5,
   "deviceId": "device_1767078289525_79y4vh0je",
   "modificationHistory": [
+    {
+      "type": "save_memo",
+      "data": {
+        "memoId": "1767079344341",
+        "title": "手机",
+        "contentLength": 3
+      },
+      "timestamp": "2025-12-30T07:22:37.928Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    },
     {
       "type": "create_folder",
       "data": {
