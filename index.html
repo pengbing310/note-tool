@@ -14,7 +14,10 @@
             const urlParams = new URLSearchParams(window.location.search);
             const hasConfigInUrl = urlParams.has('config');
             
+            console.log('检查配置:', { hasConfig, hasConfigInUrl });
+            
             if (!hasConfig && !hasConfigInUrl) {
+                console.log('未找到配置，跳转到配置页面');
                 window.location.href = 'config.html';
             }
         });
@@ -50,6 +53,10 @@
                 
                 <div class="folders-list" id="foldersList">
                     <!-- 文件夹将通过JS动态加载 -->
+                    <div class="empty-state">
+                        <i class="fas fa-folder-open"></i>
+                        <p>加载中...</p>
+                    </div>
                 </div>
 
                 <div class="sidebar-footer">
@@ -239,32 +246,33 @@
     </div>
 
     <script src="app.js"></script>
-<div class="debug-info" id="debugInfo">
-    <div>版本: <span id="dataVersion">0</span></div>
-    <div>设备: <span id="deviceId">未知</span></div>
-    <div>状态: <span id="syncStatus">离线</span></div>
-</div>
-
-<script>
-// 添加调试信息显示
-document.addEventListener('DOMContentLoaded', function() {
-    // 可以添加调试开关
-    const debugMode = localStorage.getItem('debugMode') === 'true';
-    const debugInfo = document.getElementById('debugInfo');
     
-    if (debugMode && debugInfo) {
-        debugInfo.style.display = 'block';
+    <div class="debug-info" id="debugInfo">
+        <div>版本: <span id="dataVersion">0</span></div>
+        <div>设备: <span id="deviceId">未知</span></div>
+        <div>状态: <span id="syncStatus">离线</span></div>
+    </div>
+
+    <script>
+    // 添加调试信息显示
+    document.addEventListener('DOMContentLoaded', function() {
+        // 可以添加调试开关
+        const debugMode = localStorage.getItem('debugMode') === 'true' || true; // 暂时设为true便于调试
+        const debugInfo = document.getElementById('debugInfo');
         
-        // 更新调试信息
-        setInterval(() => {
-            if (window.app) {
-                document.getElementById('dataVersion').textContent = window.app.dataVersion;
-                document.getElementById('deviceId').textContent = window.app.deviceId.substring(0, 8);
-                document.getElementById('syncStatus').textContent = window.app.syncing ? '同步中' : '在线';
-            }
-        }, 1000);
-    }
-});
-</script>
+        if (debugMode && debugInfo) {
+            debugInfo.style.display = 'block';
+            
+            // 更新调试信息
+            setInterval(() => {
+                if (window.app) {
+                    document.getElementById('dataVersion').textContent = window.app.dataVersion;
+                    document.getElementById('deviceId').textContent = window.app.deviceId ? window.app.deviceId.substring(0, 8) : '未知';
+                    document.getElementById('syncStatus').textContent = window.app.syncing ? '同步中' : (window.app.networkStatus || '离线');
+                }
+            }, 1000);
+        }
+    });
+    </script>
 </body>
 </html>
