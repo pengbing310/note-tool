@@ -14,6 +14,10 @@ class GitHubMemo {
             type: null,
             id: null
         };
+        
+        // 同步相关
+        this.syncInterval = null;
+        this.lastSyncVersion = '0';
     }
     
     loadEncryptedConfig() {
@@ -256,6 +260,9 @@ class GitHubMemo {
         this.initElements();
         this.bindEvents();
         this.loadData();
+        
+        // 启动自动同步
+        this.startAutoSync();
     }
     
     initElements() {
@@ -490,8 +497,15 @@ class GitHubMemo {
                 this.folders = data.folders || [];
                 this.memos = data.memos || [];
                 this.folderPasswords = new Map(data.passwords || []);
+                
+                // 同步本地数据
+                this.syncLocalData(data);
+                
                 this.renderFolders();
                 this.updateLastSync();
+                
+                // 保存最后同步版本
+                this.lastSyncVersion = data.lastUpdated || '0';
             } else {
                 // 如果没有数据，初始化空数组
                 this.folders = [];
@@ -506,7 +520,7 @@ class GitHubMemo {
         }
     }
     
-    async fetchFromGitHub() {
+    async fetchFromGitHub(checkOnly = false) {
         // 如果不是GitHub存储模式，从本地加载
         if (this.config.storageType !== 'github') {
             return this.loadLocalData();
@@ -515,12 +529,41 @@ class GitHubMemo {
         const { username, repo } = this.config;
         if (!username || !repo) return null;
         
-        const url = `https://raw.githubusercontent.com/${username}/${repo}/main/data.json`;
+        // 添加时间戳避免缓存
+        const timestamp = Date.now();
+        const url = `https://raw.githubusercontent.com/${username}/${repo}/main/data.json?t=${timestamp}`;
         
         try {
-            const response = await fetch(url);
+            const response = await fetch(url, {
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+            
             if (response.ok) {
-                return await response.json();
+                const data = await response.json();
+                
+                // 如果是只检查模式，只返回版本信息
+                if (checkOnly) {
+                    return {
+                        lastUpdated: data.lastUpdated,
+                        version: data.version
+                    };
+                }
+                
+                // 检查数据版本
+                const localVersion = this.getLocalDataVersion();
+                const remoteVersion = data.lastUpdated || '0';
+                
+                // 如果远程版本较新，使用远程数据
+                if (new Date(remoteVersion) > new Date(localVersion)) {
+                    console.log('使用远程数据，版本:', remoteVersion);
+                    return data;
+                } else {
+                    console.log('本地数据已是最新，版本:', localVersion);
+                    return this.loadLocalData() || data;
+                }
             } else if (response.status === 404) {
                 // 文件不存在，返回null
                 return null;
@@ -531,6 +574,41 @@ class GitHubMemo {
         
         // 如果GitHub加载失败，尝试从本地加载
         return this.loadLocalData();
+    }
+    
+    // 获取本地数据版本
+    getLocalDataVersion() {
+        const localData = localStorage.getItem('memoLocalData');
+        if (localData) {
+            try {
+                const data = JSON.parse(localData);
+                return data.lastUpdated || '0';
+            } catch (e) {
+                return '0';
+            }
+        }
+        return '0';
+    }
+    
+    // 同步本地数据
+    syncLocalData(remoteData) {
+        if (!remoteData) return;
+        
+        // 检查是否需要同步
+        const localData = localStorage.getItem('memoLocalData');
+        if (localData) {
+            const local = JSON.parse(localData);
+            const remoteVersion = new Date(remoteData.lastUpdated || '0');
+            const localVersion = new Date(local.lastUpdated || '0');
+            
+            // 如果远程数据更新，覆盖本地
+            if (remoteVersion > localVersion) {
+                localStorage.setItem('memoLocalData', JSON.stringify(remoteData));
+            }
+        } else {
+            // 如果没有本地数据，保存远程数据
+            localStorage.setItem('memoLocalData', JSON.stringify(remoteData));
+        }
     }
     
     loadLocalData() {
@@ -896,7 +974,8 @@ class GitHubMemo {
                 folders: this.folders,
                 memos: this.memos,
                 passwords: Array.from(this.folderPasswords.entries()),
-                lastUpdated: new Date().toISOString()
+                lastUpdated: new Date().toISOString(),
+                version: Date.now()
             };
             
             // 保存到本地存储作为备份
@@ -906,6 +985,12 @@ class GitHubMemo {
             if (this.config.username && this.config.repo && this.config.token) {
                 await this.pushToGitHub(data);
                 this.updateLastSync();
+                
+                // 更新最后同步版本
+                this.lastSyncVersion = data.lastUpdated;
+                
+                // 保存成功后立即重新加载，确保一致性
+                setTimeout(() => this.loadData(), 500);
             }
             
             console.log('数据保存成功');
@@ -915,7 +1000,7 @@ class GitHubMemo {
         }
     }
     
-    async pushToGitHub(data) {
+    async pushToGitHub(data, retryCount = 0) {
         // 如果不是GitHub存储模式，只保存到本地
         if (this.config.storageType !== 'github') {
             console.log('本地存储模式，仅保存到localStorage');
@@ -939,7 +1024,8 @@ class GitHubMemo {
                 const response = await fetch(apiUrl, {
                     headers: { 
                         'Authorization': `token ${this.config.token}`,
-                        'Accept': 'application/vnd.github.v3+json'
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Cache-Control': 'no-cache'
                     }
                 });
                 if (response.ok) {
@@ -975,9 +1061,56 @@ class GitHubMemo {
             return await response.json();
         } catch (error) {
             console.error('保存到GitHub失败:', error);
-            // 保存到本地作为备份
-            localStorage.setItem('memoLocalData', JSON.stringify(data));
-            throw error;
+            
+            // 重试机制
+            if (retryCount < 3) {
+                console.log(`重试保存 (${retryCount + 1}/3)...`);
+                await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+                return this.pushToGitHub(data, retryCount + 1);
+            } else {
+                // 保存到本地作为备份
+                localStorage.setItem('memoLocalData', JSON.stringify(data));
+                throw error;
+            }
+        }
+    }
+    
+    // 启动自动同步
+    startAutoSync() {
+        if (this.config.storageType !== 'github') return;
+        
+        // 清除之前的定时器（如果有）
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+        }
+        
+        // 每30秒检查一次更新
+        this.syncInterval = setInterval(() => {
+            this.checkForUpdates();
+        }, 30000); // 30秒
+    }
+    
+    // 检查更新
+    async checkForUpdates() {
+        try {
+            const localVersion = this.getLocalDataVersion();
+            const remoteData = await this.fetchFromGitHub(true); // 只检查版本
+            
+            if (remoteData && remoteData.lastUpdated) {
+                const remoteVersion = remoteData.lastUpdated;
+                
+                if (new Date(remoteVersion) > new Date(localVersion)) {
+                    console.log('检测到新版本数据，重新加载...');
+                    await this.loadData();
+                    
+                    // 显示更新提示
+                    if (this.currentFolder) {
+                        this.renderMemos();
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('检查更新失败:', error);
         }
     }
     
@@ -1033,6 +1166,41 @@ class GitHubMemo {
         
         this.pendingDelete = { type: null, id: null };
         this.hideModal(this.confirmModal);
+        
+        // 强制保存并同步
+        this.forceSaveAndSync();
+    }
+    
+    // 强制保存和同步
+    async forceSaveAndSync() {
+        try {
+            // 立即保存到本地
+            const data = {
+                folders: this.folders,
+                memos: this.memos,
+                passwords: Array.from(this.folderPasswords.entries()),
+                lastUpdated: new Date().toISOString(),
+                version: Date.now()
+            };
+            
+            localStorage.setItem('memoLocalData', JSON.stringify(data));
+            
+            // 如果是GitHub存储，立即推送到GitHub
+            if (this.config.storageType === 'github' && this.config.token) {
+                await this.pushToGitHub(data);
+                
+                // 等待一小段时间让GitHub更新
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // 重新加载数据，确保一致性
+                await this.loadData();
+            }
+            
+            console.log('删除操作已同步');
+        } catch (error) {
+            console.error('同步删除操作失败:', error);
+            // 即使失败，也至少保存到本地
+        }
     }
     
     deleteFolder(folderId) {
@@ -1071,7 +1239,6 @@ class GitHubMemo {
         }
         
         this.renderFolders();
-        this.saveDataToGitHub();
         
         alert('文件夹删除成功！');
     }
@@ -1086,7 +1253,6 @@ class GitHubMemo {
         }
         
         this.renderMemos();
-        this.saveDataToGitHub();
         
         alert('备忘录删除成功！');
     }

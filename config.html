@@ -380,22 +380,22 @@
     </div>
 
     <script>
-      class ConfigManager {
-    constructor() {
-        this.initElements();
-        this.bindEvents();
-        
-        // 检查URL参数
-        this.checkUrlParams();
-    }
-    
-    initElements() {
-        this.githubUsername = document.getElementById('githubUsername');
-        this.repoName = document.getElementById('repoName');
-        this.githubToken = document.getElementById('githubToken');
-        this.saveConfigBtn = document.getElementById('saveConfigBtn');
-        this.testConfigBtn = document.getElementById('testConfigBtn');
-        this.storageTypeRadios = document.querySelectorAll;
+        class ConfigManager {
+            constructor() {
+                this.initElements();
+                this.bindEvents();
+                
+                // 检查URL参数
+                this.checkUrlParams();
+            }
+            
+            initElements() {
+                this.githubUsername = document.getElementById('githubUsername');
+                this.repoName = document.getElementById('repoName');
+                this.githubToken = document.getElementById('githubToken');
+                this.saveConfigBtn = document.getElementById('saveConfigBtn');
+                this.testConfigBtn = document.getElementById('testConfigBtn');
+                this.storageTypeRadios = document.querySelectorAll('input[name="storageType"]');
                 this.localOption = document.getElementById('localOption');
                 this.useLocalBtn = document.getElementById('useLocalBtn');
                 this.importLink = document.getElementById('importLink');
@@ -627,7 +627,9 @@
         }
         
         // 初始化配置管理器
-        const configManager = new ConfigManager();
+        document.addEventListener('DOMContentLoaded', function() {
+            const configManager = new ConfigManager();
+        });
     </script>
 </body>
 </html>
