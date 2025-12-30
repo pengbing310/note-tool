@@ -1,44 +1,9 @@
 {
-  "folders": [
-    {
-      "id": "1767079418529",
-      "name": "145",
-      "visibility": "public",
-      "createdAt": "2025-12-30T07:23:38.529Z",
-      "updatedAt": "2025-12-30T07:23:38.529Z",
-      "deviceId": "device_1767078289525_79y4vh0je"
-    },
-    {
-      "id": "1767079411473",
-      "name": "111",
-      "visibility": "public",
-      "createdAt": "2025-12-30T07:23:31.473Z",
-      "updatedAt": "2025-12-30T07:23:31.473Z",
-      "deviceId": "device_1767078289525_79y4vh0je"
-    },
-    {
-      "id": "1767079339208",
-      "name": "普通",
-      "visibility": "public",
-      "createdAt": "2025-12-30T07:22:19.208Z",
-      "updatedAt": "2025-12-30T07:22:19.208Z",
-      "deviceId": "device_1767078289525_79y4vh0je"
-    }
-  ],
-  "memos": [
-    {
-      "id": "1767079344341",
-      "folderId": "1767079339208",
-      "title": "手机",
-      "content": "手机端",
-      "createdAt": "2025-12-30T07:22:24.341Z",
-      "updatedAt": "2025-12-30T07:22:36.585Z",
-      "deviceId": "device_1767078289525_79y4vh0je"
-    }
-  ],
+  "folders": [],
+  "memos": [],
   "passwords": [],
-  "lastUpdated": "2025-12-30T07:25:31.233Z",
-  "version": 15,
-  "deviceId": "device_1767078289525_79y4vh0je",
+  "lastUpdated": "2025-12-30T07:37:21.172Z",
+  "version": 1,
+  "deviceId": "device_1767079223172_97399cf6u",
   "modificationHistory": []
 }
