@@ -1,9 +1,28 @@
 {
-  "folders": [],
+  "folders": [
+    {
+      "id": "1767080257965",
+      "name": "成本优化",
+      "visibility": "public",
+      "createdAt": "2025-12-30T07:37:37.965Z",
+      "updatedAt": "2025-12-30T07:37:37.965Z",
+      "deviceId": "device_1767079223172_97399cf6u"
+    }
+  ],
   "memos": [],
   "passwords": [],
-  "lastUpdated": "2025-12-30T07:37:21.172Z",
-  "version": 1,
+  "lastUpdated": "2025-12-30T07:37:38.971Z",
+  "version": 2,
   "deviceId": "device_1767079223172_97399cf6u",
-  "modificationHistory": []
+  "modificationHistory": [
+    {
+      "type": "create_folder",
+      "data": {
+        "folderId": "1767080257965",
+        "name": "成本优化"
+      },
+      "timestamp": "2025-12-30T07:37:37.965Z",
+      "deviceId": "device_1767079223172_97399cf6u"
+    }
+  ]
 }
