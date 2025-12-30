@@ -14,8 +14,6 @@ class GitHubMemo {
             type: null,
             id: null
         };
-        
-        this.init();
     }
     
     loadEncryptedConfig() {
@@ -85,7 +83,7 @@ class GitHubMemo {
                 return null;
             }
             
-            console.log('从URL参数解析配置成功');
+            console.log('从URL参数解析配置成功:', config.username, config.repo);
             
             // 保存到localStorage，方便下次使用
             const configToSave = {
@@ -204,7 +202,10 @@ class GitHubMemo {
         const closeBtn = modal.querySelector('#closeShareModalBtn');
         const shareInput = modal.querySelector('#shareLinkInput');
         
-        copyBtn.addEventListener('click', () => {
+        copyBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
             shareInput.select();
             document.execCommand('copy');
             
@@ -228,19 +229,22 @@ class GitHubMemo {
         
         // 点击遮罩层关闭
         if (overlay) {
-            overlay.addEventListener('click', () => {
+            const closeOverlay = () => {
                 modal.remove();
                 overlay.classList.add('hidden');
-            });
+                overlay.removeEventListener('click', closeOverlay);
+            };
+            overlay.addEventListener('click', closeOverlay);
         }
     }
     
     init() {
-        console.log('初始化应用...');
+        console.log('初始化应用...配置状态:', this.config.configured);
         
         // 检查是否有配置
         if (!this.config.configured) {
             console.log('未配置，跳转到配置页面');
+            // 延迟跳转，避免立即重定向
             setTimeout(() => {
                 if (!window.location.href.includes('config.html')) {
                     window.location.href = 'config.html';
@@ -323,13 +327,19 @@ class GitHubMemo {
     bindEvents() {
         console.log('绑定事件...');
         
-        // 文件夹事件
+        // 文件夹事件 - 修复：确保事件绑定
         if (this.newFolderBtn) {
-            this.newFolderBtn.addEventListener('click', () => this.showNewFolderModal());
+            console.log('绑定新建文件夹按钮');
+            this.newFolderBtn.addEventListener('click', (e) => {
+                console.log('点击新建文件夹按钮');
+                e.preventDefault();
+                e.stopPropagation();
+                this.showNewFolderModal();
+            });
         }
         
         // 模态框内的事件绑定
-        if (this.visibilityRadios) {
+        if (this.visibilityRadios && this.visibilityRadios.length > 0) {
             this.visibilityRadios.forEach(radio => {
                 radio.addEventListener('change', (e) => {
                     if (this.passwordGroup) {
@@ -340,63 +350,123 @@ class GitHubMemo {
         }
         
         if (this.createFolderBtn) {
-            this.createFolderBtn.addEventListener('click', () => this.createFolder());
+            this.createFolderBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.createFolder();
+            });
         }
         
         if (this.cancelFolderBtn) {
-            this.cancelFolderBtn.addEventListener('click', () => this.hideModal(this.newFolderModal));
+            this.cancelFolderBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.hideModal(this.newFolderModal);
+            });
         }
         
         if (this.deleteFolderBtn) {
-            this.deleteFolderBtn.addEventListener('click', () => this.promptDeleteFolder());
+            this.deleteFolderBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.promptDeleteFolder();
+            });
         }
         
         // 密码事件
         if (this.submitPasswordBtn) {
-            this.submitPasswordBtn.addEventListener('click', () => this.verifyPassword());
+            this.submitPasswordBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.verifyPassword();
+            });
         }
         
         if (this.cancelPasswordBtn) {
-            this.cancelPasswordBtn.addEventListener('click', () => this.hideModal(this.passwordModal));
+            this.cancelPasswordBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.hideModal(this.passwordModal);
+            });
         }
         
         // 备忘录事件
         if (this.newMemoBtn) {
-            this.newMemoBtn.addEventListener('click', () => this.createMemo());
+            console.log('绑定新建备忘录按钮');
+            this.newMemoBtn.addEventListener('click', (e) => {
+                console.log('点击新建备忘录按钮');
+                e.preventDefault();
+                e.stopPropagation();
+                this.createMemo();
+            });
         }
         
         if (this.saveMemoBtn) {
-            this.saveMemoBtn.addEventListener('click', () => this.saveMemo());
+            this.saveMemoBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.saveMemo();
+            });
         }
         
         if (this.closeEditorBtn) {
-            this.closeEditorBtn.addEventListener('click', () => this.closeEditor());
+            this.closeEditorBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.closeEditor();
+            });
         }
         
         if (this.deleteMemoBtn) {
-            this.deleteMemoBtn.addEventListener('click', () => this.promptDeleteMemo());
+            this.deleteMemoBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.promptDeleteMemo();
+            });
         }
         
         if (this.exportMemoBtn) {
-            this.exportMemoBtn.addEventListener('click', () => this.exportCurrentMemo());
+            this.exportMemoBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.exportCurrentMemo();
+            });
         }
         
         if (this.exportAllBtn) {
-            this.exportAllBtn.addEventListener('click', () => this.exportAllData());
+            this.exportAllBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.exportAllData();
+            });
         }
         
         // 分享按钮事件
         if (this.shareConfigBtn) {
-            this.shareConfigBtn.addEventListener('click', () => this.showShareConfigModal());
+            console.log('绑定分享配置按钮');
+            this.shareConfigBtn.addEventListener('click', (e) => {
+                console.log('点击分享配置按钮');
+                e.preventDefault();
+                e.stopPropagation();
+                this.showShareConfigModal();
+            });
         }
         
         // 删除确认事件
         if (this.confirmDeleteBtn) {
-            this.confirmDeleteBtn.addEventListener('click', () => this.executeDelete());
+            this.confirmDeleteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.executeDelete();
+            });
         }
         
         if (this.cancelDeleteBtn) {
-            this.cancelDeleteBtn.addEventListener('click', () => this.hideModal(this.confirmModal));
+            this.cancelDeleteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.hideModal(this.confirmModal);
+            });
         }
         
         // 编辑器输入事件
@@ -508,6 +578,7 @@ class GitHubMemo {
             deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
             deleteBtn.title = '删除文件夹';
             deleteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 this.promptDeleteFolder(folder.id);
             });
@@ -516,6 +587,7 @@ class GitHubMemo {
             
             // 修复：使用正确的点击事件
             folderEl.addEventListener('click', (e) => {
+                e.preventDefault();
                 // 确保点击的不是删除按钮
                 if (!e.target.closest('.folder-delete-btn')) {
                     this.selectFolder(folder);
@@ -715,6 +787,7 @@ class GitHubMemo {
             deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
             deleteBtn.title = '删除备忘录';
             deleteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 this.promptDeleteMemo(memo.id);
             });
@@ -724,7 +797,10 @@ class GitHubMemo {
             actionsDiv.appendChild(deleteBtn);
             memoEl.appendChild(actionsDiv);
             
-            memoEl.addEventListener('click', () => this.editMemo(memo.id));
+            memoEl.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.editMemo(memo.id);
+            });
             this.memoGrid.appendChild(memoEl);
         });
     }
@@ -1082,4 +1158,5 @@ class GitHubMemo {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM已加载，初始化应用...');
     window.app = new GitHubMemo();
+    window.app.init();
 });
