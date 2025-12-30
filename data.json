@@ -43,6 +43,15 @@
   ],
   "memos": [
     {
+      "id": "1767083025480",
+      "folderId": "1767082938203",
+      "title": "手机端",
+      "content": "手机端",
+      "createdAt": "2025-12-30T08:23:45.480Z",
+      "updatedAt": "2025-12-30T08:23:52.790Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    },
+    {
       "id": "1767082980618",
       "folderId": "1767082938203",
       "title": "新备忘录",
@@ -80,7 +89,7 @@
     }
   ],
   "passwords": [],
-  "lastUpdated": "2025-12-30T08:23:35.422Z",
-  "version": 16,
+  "lastUpdated": "2025-12-30T08:23:54.902Z",
+  "version": 17,
   "deviceId": "device_1767078289525_79y4vh0je"
 }
