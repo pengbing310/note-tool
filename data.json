@@ -1,9 +1,28 @@
 {
-  "folders": [],
+  "folders": [
+    {
+      "id": "1767079339208",
+      "name": "普通",
+      "visibility": "public",
+      "createdAt": "2025-12-30T07:22:19.208Z",
+      "updatedAt": "2025-12-30T07:22:19.208Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    }
+  ],
   "memos": [],
   "passwords": [],
-  "lastUpdated": "2025-12-30T07:22:01.240Z",
-  "version": 1,
+  "lastUpdated": "2025-12-30T07:22:20.211Z",
+  "version": 2,
   "deviceId": "device_1767078289525_79y4vh0je",
-  "modificationHistory": []
+  "modificationHistory": [
+    {
+      "type": "create_folder",
+      "data": {
+        "folderId": "1767079339208",
+        "name": "普通"
+      },
+      "timestamp": "2025-12-30T07:22:19.208Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    }
+  ]
 }
