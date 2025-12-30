@@ -40,7 +40,12 @@ class GitHubMemo {
         this.processingQueue = false;
         
         // GitHub API状态
-        this.githubApiAvailable = true; // 假设GitHub API可用
+        this.githubApiAvailable = true;
+        this.rateLimitExceeded = false;
+        this.rateLimitResetTime = 0;
+        
+        // 请求计数器（用于调试）
+        this.requestCount = 0;
     }
     
     loadEncryptedConfig() {
@@ -585,12 +590,26 @@ class GitHubMemo {
                 return;
             }
             
+            // 检查速率限制
+            if (this.rateLimitExceeded) {
+                const now = Date.now();
+                if (now < this.rateLimitResetTime) {
+                    const remainingMinutes = Math.ceil((this.rateLimitResetTime - now) / 60000);
+                    console.log(`速率限制中，请等待 ${remainingMinutes} 分钟`);
+                    this.showNotification(`GitHub API速率限制，请等待 ${remainingMinutes} 分钟`, 'warning');
+                    return;
+                } else {
+                    // 速率限制已过期
+                    this.rateLimitExceeded = false;
+                    this.rateLimitResetTime = 0;
+                }
+            }
+            
             // 获取远程数据
             const remoteData = await this.fetchFromGitHub();
             
             if (!remoteData) {
-                console.log('GitHub上没有数据，上传本地数据');
-                // 不立即上传，等待用户操作
+                console.log('GitHub上没有数据，等待用户操作');
                 return;
             }
             
@@ -608,7 +627,6 @@ class GitHubMemo {
             this.saveLocalData();
             
             console.log('数据同步完成');
-            this.showNotification('数据同步成功', 'success');
             
         } catch (error) {
             console.error('同步失败:', error);
@@ -630,15 +648,31 @@ class GitHubMemo {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
             
+            this.requestCount++;
+            console.log(`GitHub API请求 #${this.requestCount}`);
+            
             const response = await fetch(apiUrl, {
                 signal: controller.signal,
                 headers: {
                     'Authorization': `token ${this.config.token}`,
-                    'Accept': 'application/vnd.github.v3+json'
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'GitHub-Memo-App' // GitHub API要求User-Agent
                 }
             });
             
             clearTimeout(timeoutId);
+            
+            // 检查速率限制头
+            const remaining = response.headers.get('X-RateLimit-Remaining');
+            const resetTime = response.headers.get('X-RateLimit-Reset');
+            
+            if (remaining && parseInt(remaining) < 10) {
+                console.warn(`GitHub API剩余请求次数: ${remaining}`);
+                if (resetTime) {
+                    this.rateLimitResetTime = parseInt(resetTime) * 1000;
+                    console.log(`速率限制将在 ${new Date(this.rateLimitResetTime).toLocaleTimeString()} 重置`);
+                }
+            }
             
             if (response.ok) {
                 const fileInfo = await response.json();
@@ -650,7 +684,8 @@ class GitHubMemo {
                         sha: fileInfo.sha ? fileInfo.sha.substring(0, 8) : 'unknown',
                         文件夹数: data.folders?.length || 0,
                         备忘录数: data.memos?.length || 0,
-                        版本: data.version || 0
+                        版本: data.version || 0,
+                        剩余请求次数: remaining
                     });
                     
                     return data;
@@ -662,8 +697,21 @@ class GitHubMemo {
                 console.log('GitHub上没有数据文件');
                 return null;
             } else if (response.status === 401 || response.status === 403) {
-                console.error('GitHub认证失败，请检查Token');
+                const errorData = await response.json();
+                console.error('GitHub认证失败:', errorData.message);
+                
+                if (errorData.message && errorData.message.includes('rate limit')) {
+                    // 处理速率限制错误
+                    this.handleRateLimitError(errorData);
+                    return null;
+                }
+                
                 this.showNotification('GitHub认证失败，请检查Token', 'error');
+                return null;
+            } else if (response.status === 429) {
+                // 429 Too Many Requests
+                const errorData = await response.json();
+                this.handleRateLimitError(errorData);
                 return null;
             } else {
                 const errorText = await response.text();
@@ -673,13 +721,43 @@ class GitHubMemo {
         } catch (error) {
             if (error.name === 'AbortError') {
                 console.error('请求超时');
-                // 不抛出错误，静默失败
                 return null;
             } else {
                 console.error('从GitHub获取数据失败:', error);
                 return null;
             }
         }
+    }
+    
+    // 处理速率限制错误
+    handleRateLimitError(errorData) {
+        this.rateLimitExceeded = true;
+        
+        let resetTime = Date.now() + 3600000; // 默认1小时后
+        if (errorData.message) {
+            // 尝试从错误消息中提取重置时间
+            const match = errorData.message.match(/reset at (.+?)\./i);
+            if (match) {
+                try {
+                    resetTime = new Date(match[1]).getTime();
+                } catch (e) {
+                    // 解析失败，使用默认时间
+                }
+            }
+        }
+        
+        this.rateLimitResetTime = resetTime;
+        
+        const resetDate = new Date(resetTime);
+        const remainingMinutes = Math.ceil((resetTime - Date.now()) / 60000);
+        
+        console.error('GitHub API速率限制:', {
+            message: errorData.message,
+            重置时间: resetDate.toLocaleString(),
+            剩余等待时间: `${remainingMinutes} 分钟`
+        });
+        
+        this.showNotification(`GitHub API速率限制，请等待 ${remainingMinutes} 分钟后重试`, 'warning');
     }
     
     // 改进的数据合并方法
@@ -1045,718 +1123,3 @@ class GitHubMemo {
     }
     
     renderMemos() {
-        if (!this.currentFolder || !this.memoGrid) return;
-        
-        const folderMemos = this.memos.filter(memo => memo.folderId === this.currentFolder.id);
-        
-        this.memoGrid.innerHTML = '';
-        
-        if (folderMemos.length === 0) {
-            this.memoGrid.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-sticky-note"></i>
-                    <h3>暂无备忘录</h3>
-                    <p>点击"新建备忘录"开始记录</p>
-                    <p class="tip">所有备忘录将自动保存</p>
-                </div>
-            `;
-            return;
-        }
-        
-        folderMemos.forEach(memo => {
-            const memoEl = document.createElement('div');
-            memoEl.className = 'memo-card';
-            
-            // 预览内容（限制长度）
-            const preview = memo.content.length > 200 ? 
-                memo.content.substring(0, 200) + '...' : 
-                memo.content;
-            
-            memoEl.innerHTML = `
-                <div class="memo-header">
-                    <h3>${this.escapeHtml(memo.title)}</h3>
-                    <span class="memo-date">${new Date(memo.updatedAt).toLocaleString('zh-CN')}</span>
-                </div>
-                <div class="memo-content">${this.escapeHtml(preview)}</div>
-            `;
-            
-            // 添加删除按钮
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'memo-action-btn';
-            deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
-            deleteBtn.title = '删除备忘录';
-            deleteBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.promptDeleteMemo(memo.id);
-            });
-            
-            const actionsDiv = document.createElement('div');
-            actionsDiv.className = 'memo-actions';
-            actionsDiv.appendChild(deleteBtn);
-            memoEl.appendChild(actionsDiv);
-            
-            memoEl.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.editMemo(memo.id);
-            });
-            this.memoGrid.appendChild(memoEl);
-        });
-    }
-    
-    createMemo() {
-        console.log('创建备忘录...');
-        if (!this.currentFolder) {
-            alert('请先选择文件夹');
-            return;
-        }
-        
-        const now = new Date().toISOString();
-        this.currentMemo = {
-            id: Date.now().toString(),
-            folderId: this.currentFolder.id,
-            title: '新备忘录',
-            content: '',
-            createdAt: now,
-            updatedAt: now,
-            deviceId: this.deviceId
-        };
-        
-        this.openEditor();
-    }
-    
-    editMemo(memoId) {
-        console.log('编辑备忘录:', memoId);
-        const memo = this.memos.find(m => m.id === memoId);
-        if (memo) {
-            this.currentMemo = memo;
-            this.openEditor();
-        }
-    }
-    
-    openEditor() {
-        console.log('打开编辑器');
-        if (!this.memoTitle || !this.memoContent) return;
-        
-        this.memoTitle.value = this.currentMemo.title;
-        this.memoContent.value = this.currentMemo.content;
-        this.updateEditorInfo();
-        this.showEditor();
-        
-        // 聚焦到标题
-        setTimeout(() => {
-            if (this.memoTitle) {
-                this.memoTitle.focus();
-                this.memoTitle.select();
-            }
-        }, 100);
-    }
-    
-    closeEditor() {
-        console.log('关闭编辑器');
-        this.currentMemo = null;
-        this.showMemoList();
-        this.renderMemos();
-    }
-    
-    updateEditorInfo() {
-        if (!this.currentMemo || !this.charCount || !this.lastModified) return;
-        
-        const charCount = this.memoContent.value.length + this.memoTitle.value.length;
-        this.charCount.textContent = charCount;
-        this.lastModified.textContent = '刚刚';
-        
-        // 更新当前备忘录
-        this.currentMemo.title = this.memoTitle.value.trim() || '无标题';
-        this.currentMemo.content = this.memoContent.value;
-        this.currentMemo.updatedAt = new Date().toISOString();
-    }
-    
-    saveMemo() {
-        console.log('保存备忘录');
-        if (!this.currentMemo) return;
-        
-        // 如果是新备忘录，添加到列表
-        const existingIndex = this.memos.findIndex(m => m.id === this.currentMemo.id);
-        if (existingIndex === -1) {
-            this.memos.unshift(this.currentMemo);
-        } else {
-            this.memos[existingIndex] = this.currentMemo;
-        }
-        
-        // 保存数据
-        this.saveLocalData();
-        
-        // 添加到同步队列
-        this.addToSyncQueue();
-        
-        this.closeEditor();
-        
-        this.showNotification('备忘录保存成功', 'success');
-    }
-    
-    async saveDataToGitHub() {
-        if (this.config.storageType !== 'github' || !this.config.token) {
-            return null;
-        }
-        
-        console.log('尝试保存数据到GitHub...');
-        
-        const { username, repo } = this.config;
-        const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
-        
-        try {
-            // 准备数据
-            const data = {
-                folders: this.folders,
-                memos: this.memos,
-                passwords: Array.from(this.folderPasswords.entries()),
-                lastUpdated: new Date().toISOString(),
-                version: this.dataVersion + 1,
-                deviceId: this.deviceId
-            };
-            
-            const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
-            
-            // 先获取文件SHA（如果存在）
-            let sha = null;
-            let existingFile = false;
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000);
-                
-                const response = await fetch(apiUrl, {
-                    signal: controller.signal,
-                    headers: { 
-                        'Authorization': `token ${this.config.token}`,
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
-                });
-                
-                clearTimeout(timeoutId);
-                
-                if (response.ok) {
-                    const fileInfo = await response.json();
-                    if (fileInfo && fileInfo.sha) {
-                        sha = fileInfo.sha;
-                        existingFile = true;
-                        console.log('获取到现有文件SHA:', sha.substring(0, 8));
-                    }
-                } else if (response.status === 404) {
-                    console.log('文件不存在，将创建新文件');
-                } else {
-                    // 静默处理其他错误
-                    console.log('获取文件信息失败:', response.status);
-                }
-            } catch (error) {
-                // 静默处理获取SHA的错误
-                console.log('获取SHA失败，继续尝试保存');
-            }
-            
-            const body = {
-                message: `Update memo data ${new Date().toISOString()}`,
-                content: content
-            };
-            
-            // 只有存在文件时才需要sha
-            if (sha) {
-                body.sha = sha;
-            }
-            
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
-            
-            const response = await fetch(apiUrl, {
-                method: 'PUT',
-                signal: controller.signal,
-                headers: {
-                    'Authorization': `token ${this.config.token}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/vnd.github.v3+json'
-                },
-                body: JSON.stringify(body)
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (response.ok) {
-                const result = await response.json();
-                
-                // 安全地处理结果
-                if (result && result.sha) {
-                    console.log('数据保存到GitHub成功:', {
-                        sha: result.sha.substring(0, 8),
-                        版本: this.dataVersion + 1,
-                        操作: existingFile ? '更新' : '创建'
-                    });
-                } else {
-                    console.log('数据保存到GitHub成功，但未获取到SHA');
-                }
-                
-                this.dataVersion++;
-                this.lastSyncTime = Date.now();
-                this.updateLastSync();
-                
-                return result;
-            } else {
-                let errorMessage = 'GitHub保存失败';
-                try {
-                    const errorData = await response.json();
-                    if (errorData && errorData.message) {
-                        errorMessage = errorData.message;
-                        
-                        // 特定错误处理
-                        if (errorMessage.includes('rate limit') || errorMessage.includes('API rate limit')) {
-                            errorMessage = 'GitHub API速率限制，请稍后再试';
-                        } else if (errorMessage.includes('bad credentials') || response.status === 401) {
-                            errorMessage = 'GitHub Token无效或已过期';
-                        }
-                    }
-                } catch (e) {
-                    // 忽略JSON解析错误
-                }
-                
-                console.error('GitHub API错误:', response.status, response.statusText, errorMessage);
-                throw new Error(errorMessage);
-            }
-            
-        } catch (error) {
-            console.error('保存到GitHub失败:', error.message);
-            throw error;
-        }
-    }
-    
-    saveLocalData() {
-        const data = {
-            folders: this.folders,
-            memos: this.memos,
-            passwords: Array.from(this.folderPasswords.entries()),
-            version: this.dataVersion,
-            lastUpdated: new Date().toISOString(),
-            deviceId: this.deviceId
-        };
-        
-        localStorage.setItem('memoLocalData', JSON.stringify(data));
-        console.log('数据已保存到本地存储');
-    }
-    
-    // 添加到同步队列
-    addToSyncQueue() {
-        if (this.config.storageType !== 'github') {
-            return;
-        }
-        
-        // 检查网络状态
-        if (this.networkStatus !== 'online') {
-            console.log('网络不可用，不添加到同步队列');
-            return;
-        }
-        
-        // 添加时间戳标记
-        const syncItem = {
-            timestamp: Date.now(),
-            dataVersion: this.dataVersion
-        };
-        
-        this.syncQueue.push(syncItem);
-        
-        // 如果队列不为空且不在处理中，开始处理
-        if (!this.processingQueue && this.syncQueue.length > 0) {
-            this.processSyncQueue();
-        }
-    }
-    
-    // 处理同步队列
-    async processSyncQueue() {
-        if (this.processingQueue || this.syncQueue.length === 0) {
-            return;
-        }
-        
-        this.processingQueue = true;
-        
-        let syncItem;
-        try {
-            // 获取队列中的第一个任务
-            syncItem = this.syncQueue.shift();
-            
-            console.log('处理同步任务:', syncItem);
-            
-            // 尝试同步到GitHub
-            const result = await this.saveDataToGitHub();
-            
-            if (result) {
-                this.showNotification('数据已同步到云端', 'success');
-            }
-            
-        } catch (error) {
-            console.error('同步失败:', error.message);
-            
-            // 根据错误类型决定是否重试
-            const shouldRetry = !error.message.includes('Token无效') && 
-                               !error.message.includes('权限不足');
-            
-            if (shouldRetry && syncItem) {
-                // 将任务放回队列，稍后重试
-                setTimeout(() => {
-                    this.syncQueue.unshift(syncItem);
-                    this.processingQueue = false;
-                    
-                    // 30秒后重试
-                    setTimeout(() => this.processSyncQueue(), 30000);
-                }, 1000);
-                
-                return;
-            } else if (error.message.includes('Token无效') || error.message.includes('权限不足')) {
-                // Token错误，不重试
-                this.showNotification('GitHub Token无效，请重新配置', 'error');
-            }
-        }
-        
-        this.processingQueue = false;
-        
-        // 处理队列中的下一个任务
-        if (this.syncQueue.length > 0) {
-            setTimeout(() => this.processSyncQueue(), 1000);
-        }
-    }
-    
-    // 简化网络监控
-    startNetworkMonitoring() {
-        // 监听网络状态变化
-        window.addEventListener('online', () => {
-            this.networkStatus = 'online';
-            console.log('网络已连接');
-            
-            // 网络恢复后尝试同步
-            if (this.config.storageType === 'github' && this.syncQueue.length > 0) {
-                this.processSyncQueue();
-            }
-        });
-        
-        window.addEventListener('offline', () => {
-            this.networkStatus = 'offline';
-            console.log('网络已断开');
-        });
-    }
-    
-    // 启动自动同步
-    startAutoSync() {
-        // 清除之前的定时器
-        if (this.autoSyncInterval) {
-            clearInterval(this.autoSyncInterval);
-        }
-        
-        // 每60秒尝试同步一次
-        this.autoSyncInterval = setInterval(() => {
-            this.autoSync();
-        }, 60000); // 60秒
-    }
-    
-    async autoSync() {
-        if (this.syncing || this.processingQueue) {
-            if (this.debugMode) console.log('同步进行中，跳过本次');
-            return;
-        }
-        
-        if (this.config.storageType !== 'github') {
-            return;
-        }
-        
-        // 检查网络状态
-        if (this.networkStatus !== 'online') {
-            if (this.debugMode) console.log('网络不可用，跳过同步');
-            return;
-        }
-        
-        console.log('自动同步检查...');
-        
-        try {
-            this.syncing = true;
-            
-            // 获取远程数据
-            const remoteData = await this.fetchFromGitHub();
-            
-            if (remoteData) {
-                // 检查版本是否需要同步
-                if (remoteData.version > this.dataVersion) {
-                    console.log('检测到新版本，开始同步...');
-                    await this.mergeData(remoteData);
-                    this.saveLocalData();
-                    this.renderFolders();
-                    
-                    if (this.currentFolder) {
-                        this.renderMemos();
-                    }
-                    
-                    this.showNotification('数据已从云端更新', 'info');
-                }
-            }
-            
-            this.syncing = false;
-            this.retryCount = 0;
-            
-        } catch (error) {
-            console.error('自动同步失败:', error.message);
-            this.syncing = false;
-            this.retryCount++;
-            
-            // 重试逻辑（最多3次）
-            if (this.retryCount <= this.maxRetries) {
-                const delay = Math.min(30000, 5000 * Math.pow(2, this.retryCount - 1));
-                console.log(`将在${delay/1000}秒后重试 (${this.retryCount}/${this.maxRetries})`);
-                
-                setTimeout(() => this.autoSync(), delay);
-            } else {
-                console.log('达到最大重试次数，停止自动同步');
-                // 不显示错误通知，避免打扰用户
-            }
-        }
-    }
-    
-    // 删除文件夹
-    promptDeleteFolder(folderId = null) {
-        const folder = folderId ? this.folders.find(f => f.id === folderId) : this.currentFolder;
-        if (!folder) return;
-        
-        // 检查文件夹是否有备忘录
-        const folderMemos = this.memos.filter(m => m.folderId === folder.id);
-        
-        this.pendingDelete = {
-            type: 'folder',
-            id: folder.id
-        };
-        
-        let message = `确定要删除文件夹"${folder.name}"吗？`;
-        if (folderMemos.length > 0) {
-            message += `\n\n⚠️ 警告：该文件夹包含 ${folderMemos.length} 个备忘录，删除文件夹将同时删除这些备忘录！`;
-        }
-        
-        if (this.confirmMessage) {
-            this.confirmMessage.textContent = message;
-        }
-        this.showModal(this.confirmModal);
-    }
-    
-    // 删除备忘录
-    promptDeleteMemo(memoId = null) {
-        const memo = memoId ? this.memos.find(m => m.id === memoId) : this.currentMemo;
-        if (!memo) return;
-        
-        this.pendingDelete = {
-            type: 'memo',
-            id: memo.id
-        };
-        
-        if (this.confirmMessage) {
-            this.confirmMessage.textContent = `确定要删除备忘录"${memo.title}"吗？`;
-        }
-        this.showModal(this.confirmModal);
-    }
-    
-    // 执行删除
-    executeDelete() {
-        if (!this.pendingDelete.type || !this.pendingDelete.id) return;
-        
-        if (this.pendingDelete.type === 'folder') {
-            this.deleteFolder(this.pendingDelete.id);
-        } else if (this.pendingDelete.type === 'memo') {
-            this.deleteMemo(this.pendingDelete.id);
-        }
-        
-        this.pendingDelete = { type: null, id: null };
-        this.hideModal(this.confirmModal);
-        
-        // 添加到同步队列
-        this.addToSyncQueue();
-    }
-    
-    deleteFolder(folderId) {
-        // 删除文件夹
-        this.folders = this.folders.filter(f => f.id !== folderId);
-        
-        // 删除文件夹下的所有备忘录
-        this.memos = this.memos.filter(m => m.folderId !== folderId);
-        
-        // 删除密码记录
-        this.folderPasswords.delete(folderId);
-        
-        // 如果删除的是当前文件夹，清空当前选择
-        if (this.currentFolder?.id === folderId) {
-            this.currentFolder = null;
-            this.currentMemo = null;
-            if (this.currentFolderName) {
-                this.currentFolderName.textContent = '请选择文件夹';
-            }
-            if (this.newMemoBtn) {
-                this.newMemoBtn.disabled = true;
-            }
-            if (this.deleteFolderBtn) {
-                this.deleteFolderBtn.disabled = true;
-            }
-            this.showMemoList();
-            if (this.memoGrid) {
-                this.memoGrid.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-sticky-note"></i>
-                        <h3>请选择文件夹</h3>
-                        <p>选择一个文件夹开始记录</p>
-                    </div>
-                `;
-            }
-        }
-        
-        // 保存数据
-        this.saveLocalData();
-        
-        this.renderFolders();
-        
-        this.showNotification('文件夹删除成功', 'success');
-    }
-    
-    deleteMemo(memoId) {
-        // 删除备忘录
-        this.memos = this.memos.filter(m => m.id !== memoId);
-        
-        // 如果删除的是当前备忘录，关闭编辑器
-        if (this.currentMemo?.id === memoId) {
-            this.closeEditor();
-        }
-        
-        // 保存数据
-        this.saveLocalData();
-        
-        this.renderMemos();
-        
-        this.showNotification('备忘录删除成功', 'success');
-    }
-    
-    exportCurrentMemo() {
-        if (!this.currentMemo) return;
-        
-        const data = {
-            memo: this.currentMemo,
-            exportedAt: new Date().toISOString()
-        };
-        
-        this.downloadJSON(data, `memo-${this.currentMemo.id}.json`);
-    }
-    
-    exportAllData() {
-        const data = {
-            folders: this.folders,
-            memos: this.memos,
-            passwords: Array.from(this.folderPasswords.entries()),
-            exportedAt: new Date().toISOString()
-        };
-        
-        this.downloadJSON(data, 'memo-backup.json');
-    }
-    
-    downloadJSON(data, filename) {
-        const jsonStr = JSON.stringify(data, null, 2);
-        const blob = new Blob([jsonStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-    
-    updateLastSync() {
-        if (this.lastSync) {
-            const now = new Date();
-            this.lastSync.textContent = now.toLocaleTimeString('zh-CN');
-            this.lastSync.title = now.toLocaleString('zh-CN');
-        }
-    }
-    
-    showModal(modal) {
-        if (!this.modalOverlay || !modal) return;
-        
-        this.modalOverlay.classList.remove('hidden');
-        modal.classList.remove('hidden');
-    }
-    
-    hideModal(modal) {
-        if (!this.modalOverlay || !modal) return;
-        
-        this.modalOverlay.classList.add('hidden');
-        modal.classList.add('hidden');
-    }
-    
-    // 显示通知
-    showNotification(message, type = 'info') {
-        // 创建通知元素
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.innerHTML = `
-            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-            <span>${message}</span>
-            <button class="notification-close"><i class="fas fa-times"></i></button>
-        `;
-        
-        // 添加到页面
-        document.body.appendChild(notification);
-        
-        // 显示通知
-        setTimeout(() => {
-            notification.classList.add('show');
-        }, 100);
-        
-        // 关闭按钮事件
-        const closeBtn = notification.querySelector('.notification-close');
-        closeBtn.addEventListener('click', () => {
-            notification.classList.remove('show');
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 300);
-        });
-        
-        // 3秒后自动隐藏（成功消息）或5秒后（错误消息）
-        const duration = type === 'error' ? 5000 : 3000;
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.classList.remove('show');
-                setTimeout(() => {
-                    if (notification.parentNode) {
-                        notification.parentNode.removeChild(notification);
-                    }
-                }, 300);
-            }
-        }, duration);
-    }
-    
-    // 记录数据统计
-    logDataStats() {
-        if (this.debugMode) {
-            console.log('数据统计:', {
-                文件夹数: this.folders.length,
-                备忘录数: this.memos.length,
-                密码数: this.folderPasswords.size,
-                数据版本: this.dataVersion,
-                设备ID: this.deviceId,
-                同步队列: this.syncQueue.length,
-                网络状态: this.networkStatus
-            });
-        }
-    }
-    
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-}
-
-// 初始化应用
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM已加载，初始化应用...');
-    window.app = new GitHubMemo();
-    window.app.init();
-});
