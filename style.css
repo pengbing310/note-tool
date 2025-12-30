@@ -892,3 +892,113 @@ header {
         width: 100%;
     }
 }
+/* 同步通知 */
+.sync-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #3498db;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 9999;
+    transform: translateX(150%);
+    transition: transform 0.3s ease;
+    max-width: 300px;
+}
+
+.sync-notification.show {
+    transform: translateX(0);
+}
+
+.sync-notification i {
+    font-size: 1.2rem;
+}
+
+.sync-notification.success {
+    background: #27ae60;
+}
+
+.sync-notification.error {
+    background: #e74c3c;
+}
+
+.sync-notification.warning {
+    background: #f39c12;
+}
+
+/* 数据版本提示 */
+.data-version-hint {
+    font-size: 0.8rem;
+    color: #7f8c8d;
+    margin-top: 5px;
+}
+
+/* 自动保存指示器 */
+.auto-save-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.9rem;
+    color: #27ae60;
+    margin-left: 10px;
+}
+
+.auto-save-indicator.saving {
+    color: #f39c12;
+}
+
+/* 同步状态 */
+.sync-status {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 0.8rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #f1f1f1;
+    color: #666;
+}
+
+.sync-status.syncing {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.sync-status.online {
+    background: #d4edda;
+    color: #155724;
+}
+
+.sync-status.offline {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* 冲突解决提示 */
+.conflict-resolution {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 10px 0;
+}
+
+.conflict-resolution h4 {
+    color: #856404;
+    margin-bottom: 10px;
+}
+
+.conflict-resolution .resolution-options {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.conflict-resolution .resolution-options button {
+    flex: 1;
+}
