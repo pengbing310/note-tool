@@ -549,8 +549,8 @@ header {
     background: white;
     border-radius: 12px;
     z-index: 1001;
-    min-width: 90%;
-    max-width: 95vw;
+    min-width: 400px; /* 修复：增加最小宽度 */
+    max-width: 500px;
     max-height: 90vh;
     overflow-y: auto;
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
@@ -583,30 +583,33 @@ header {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    font-size: 1.4rem;
 }
 
-/* 表单 */
-.form-group {
+/* 模态框内的表单样式 - 修复输入框大小 */
+.modal .form-group {
     margin-bottom: 1.5rem;
 }
 
-.form-group label {
+.modal .form-group label {
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 500;
     color: #2c3e50;
+    font-size: 1rem;
 }
 
-.form-control {
+.modal .form-control {
     width: 100%;
     padding: 0.875rem 1rem;
     border: 1px solid #ddd;
     border-radius: 8px;
     font-size: 1rem;
     transition: border-color 0.2s;
+    min-height: 46px; /* 修复：确保足够的高度 */
 }
 
-.form-control:focus {
+.modal .form-control:focus {
     outline: none;
     border-color: #3498db;
     box-shadow: 0 0 0 3px rgba(52,152,219,0.1);
@@ -650,6 +653,7 @@ header {
 .option-content strong {
     display: block;
     margin-bottom: 0.25rem;
+    font-size: 1rem;
 }
 
 .option-content small {
@@ -657,7 +661,7 @@ header {
     font-size: 0.85rem;
 }
 
-.form-hint {
+.modal .form-hint {
     display: block;
     margin-top: 0.5rem;
     color: #7f8c8d;
@@ -680,6 +684,8 @@ header {
     margin: 1.5rem 0;
     font-size: 1.1rem;
     color: #2d3748;
+    line-height: 1.6;
+    white-space: pre-line; /* 保留换行符 */
 }
 
 #confirmDeleteBtn {
@@ -767,8 +773,10 @@ header {
     }
     
     .modal {
-        min-width: 95%;
+        min-width: 90% !important; /* 修复：响应式调整 */
+        max-width: 95% !important;
         padding: 1.5rem;
+        margin: 10px;
     }
     
     .memo-list-actions {
@@ -792,6 +800,16 @@ header {
     
     .storage-info {
         justify-content: center;
+    }
+    
+    /* 手机端模态框调整 */
+    .modal .form-control {
+        padding: 0.75rem 0.875rem;
+        font-size: 16px; /* 防止iOS缩放 */
+    }
+    
+    .modal-content {
+        padding: 1.5rem;
     }
 }
 
@@ -826,6 +844,18 @@ header {
     .content-textarea {
         min-height: 250px;
     }
+    
+    .modal-content h3 {
+        font-size: 1.2rem;
+    }
+    
+    .modal-actions {
+        flex-direction: column;
+    }
+    
+    .modal-actions .btn {
+        width: 100%;
+    }
 }
 
 /* 高分辨率适配 */
@@ -842,5 +872,10 @@ header {
     
     .memo-card {
         height: 200px;
+    }
+    
+    .modal {
+        min-width: 450px;
+        max-width: 550px;
     }
 }
