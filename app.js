@@ -29,9 +29,8 @@ class GitHubMemo {
         // 设备ID
         this.deviceId = this.getDeviceId();
         
-        // 网络状态 - 改为更宽松的检测
-        this.networkStatus = 'online'; // 默认假设在线
-        this.lastNetworkCheck = 0;
+        // 网络状态
+        this.networkStatus = navigator.onLine ? 'online' : 'offline';
         
         // 调试模式
         this.debugMode = localStorage.getItem('memoDebugMode') === 'true';
@@ -39,6 +38,9 @@ class GitHubMemo {
         // 同步队列
         this.syncQueue = [];
         this.processingQueue = false;
+        
+        // GitHub API状态
+        this.githubApiAvailable = true; // 假设GitHub API可用
     }
     
     loadEncryptedConfig() {
@@ -577,6 +579,12 @@ class GitHubMemo {
         console.log('开始从GitHub同步数据...');
         
         try {
+            // 检查网络状态
+            if (this.networkStatus !== 'online') {
+                console.log('网络不可用，跳过同步');
+                return;
+            }
+            
             // 获取远程数据
             const remoteData = await this.fetchFromGitHub();
             
@@ -1296,13 +1304,20 @@ class GitHubMemo {
                     const errorData = await response.json();
                     if (errorData && errorData.message) {
                         errorMessage = errorData.message;
+                        
+                        // 特定错误处理
+                        if (errorMessage.includes('rate limit') || errorMessage.includes('API rate limit')) {
+                            errorMessage = 'GitHub API速率限制，请稍后再试';
+                        } else if (errorMessage.includes('bad credentials') || response.status === 401) {
+                            errorMessage = 'GitHub Token无效或已过期';
+                        }
                     }
                 } catch (e) {
                     // 忽略JSON解析错误
                 }
                 
                 console.error('GitHub API错误:', response.status, response.statusText, errorMessage);
-                throw new Error(`GitHub保存失败: ${errorMessage}`);
+                throw new Error(errorMessage);
             }
             
         } catch (error) {
@@ -1331,6 +1346,12 @@ class GitHubMemo {
             return;
         }
         
+        // 检查网络状态
+        if (this.networkStatus !== 'online') {
+            console.log('网络不可用，不添加到同步队列');
+            return;
+        }
+        
         // 添加时间戳标记
         const syncItem = {
             timestamp: Date.now(),
@@ -1353,35 +1374,42 @@ class GitHubMemo {
         
         this.processingQueue = true;
         
+        let syncItem;
         try {
             // 获取队列中的第一个任务
-            const syncItem = this.syncQueue.shift();
+            syncItem = this.syncQueue.shift();
             
             console.log('处理同步任务:', syncItem);
             
             // 尝试同步到GitHub
-            await this.saveDataToGitHub();
+            const result = await this.saveDataToGitHub();
             
-            this.showNotification('数据已同步到云端', 'success');
+            if (result) {
+                this.showNotification('数据已同步到云端', 'success');
+            }
             
         } catch (error) {
             console.error('同步失败:', error.message);
             
-            // 不显示错误通知，避免打扰用户
-            if (this.debugMode) {
-                this.showNotification(`同步失败: ${error.message}`, 'error');
-            }
+            // 根据错误类型决定是否重试
+            const shouldRetry = !error.message.includes('Token无效') && 
+                               !error.message.includes('权限不足');
             
-            // 将任务放回队列，稍后重试
-            setTimeout(() => {
-                this.syncQueue.unshift(syncItem);
-                this.processingQueue = false;
+            if (shouldRetry && syncItem) {
+                // 将任务放回队列，稍后重试
+                setTimeout(() => {
+                    this.syncQueue.unshift(syncItem);
+                    this.processingQueue = false;
+                    
+                    // 30秒后重试
+                    setTimeout(() => this.processSyncQueue(), 30000);
+                }, 1000);
                 
-                // 5秒后重试
-                setTimeout(() => this.processSyncQueue(), 5000);
-            }, 1000);
-            
-            return;
+                return;
+            } else if (error.message.includes('Token无效') || error.message.includes('权限不足')) {
+                // Token错误，不重试
+                this.showNotification('GitHub Token无效，请重新配置', 'error');
+            }
         }
         
         this.processingQueue = false;
@@ -1392,12 +1420,12 @@ class GitHubMemo {
         }
     }
     
-    // 网络监控（简化版）
+    // 简化网络监控
     startNetworkMonitoring() {
         // 监听网络状态变化
         window.addEventListener('online', () => {
+            this.networkStatus = 'online';
             console.log('网络已连接');
-            this.showNotification('网络已连接', 'success');
             
             // 网络恢复后尝试同步
             if (this.config.storageType === 'github' && this.syncQueue.length > 0) {
@@ -1406,20 +1434,8 @@ class GitHubMemo {
         });
         
         window.addEventListener('offline', () => {
+            this.networkStatus = 'offline';
             console.log('网络已断开');
-            this.showNotification('网络已断开', 'error');
-        });
-    }
-    
-    // 简化网络检查 - 只在需要时检查
-    async checkNetwork() {
-        return new Promise((resolve) => {
-            // 使用浏览器内置的在线状态
-            if (navigator.onLine) {
-                resolve('online');
-            } else {
-                resolve('offline');
-            }
         });
     }
     
@@ -1446,9 +1462,8 @@ class GitHubMemo {
             return;
         }
         
-        // 检查网络
-        const networkStatus = await this.checkNetwork();
-        if (networkStatus !== 'online') {
+        // 检查网络状态
+        if (this.networkStatus !== 'online') {
             if (this.debugMode) console.log('网络不可用，跳过同步');
             return;
         }
@@ -1726,7 +1741,8 @@ class GitHubMemo {
                 密码数: this.folderPasswords.size,
                 数据版本: this.dataVersion,
                 设备ID: this.deviceId,
-                同步队列: this.syncQueue.length
+                同步队列: this.syncQueue.length,
+                网络状态: this.networkStatus
             });
         }
     }
