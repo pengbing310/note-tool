@@ -10,19 +10,52 @@
     },
     {
       "id": "1767080257965",
-      "name": "成本优化",
+      "name": "ææ¬ä¼å",
       "visibility": "public",
       "createdAt": "2025-12-30T07:37:37.965Z",
       "updatedAt": "2025-12-30T07:37:37.965Z",
       "deviceId": "device_1767079223172_97399cf6u"
+    },
+    {
+      "id": "1767079418529",
+      "name": "145",
+      "visibility": "public",
+      "createdAt": "2025-12-30T07:23:38.529Z",
+      "updatedAt": "2025-12-30T07:23:38.529Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    },
+    {
+      "id": "1767079411473",
+      "name": "111",
+      "visibility": "public",
+      "createdAt": "2025-12-30T07:23:31.473Z",
+      "updatedAt": "2025-12-30T07:23:31.473Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    },
+    {
+      "id": "1767079339208",
+      "name": "普通",
+      "visibility": "public",
+      "createdAt": "2025-12-30T07:22:19.208Z",
+      "updatedAt": "2025-12-30T07:22:19.208Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
     }
   ],
   "memos": [
     {
+      "id": "1767082980618",
+      "folderId": "1767082938203",
+      "title": "新备忘录",
+      "content": "手机端",
+      "createdAt": "2025-12-30T08:23:00.618Z",
+      "updatedAt": "2025-12-30T08:23:07.635Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    },
+    {
       "id": "1767081679331",
       "folderId": "1767080257965",
-      "title": "电脑端",
-      "content": "电脑端",
+      "title": "çµèç«¯",
+      "content": "çµèç«¯",
       "createdAt": "2025-12-30T08:01:19.331Z",
       "updatedAt": "2025-12-30T08:01:26.302Z",
       "deviceId": "device_1767079223172_97399cf6u"
@@ -30,15 +63,24 @@
     {
       "id": "1767081075645",
       "folderId": "1767080257965",
-      "title": "新的",
-      "content": "电脑端",
+      "title": "æ°ç",
+      "content": "çµèç«¯",
       "createdAt": "2025-12-30T07:51:15.645Z",
       "updatedAt": "2025-12-30T07:51:30.982Z",
       "deviceId": "device_1767079223172_97399cf6u"
+    },
+    {
+      "id": "1767079344341",
+      "folderId": "1767079339208",
+      "title": "手机",
+      "content": "手机端",
+      "createdAt": "2025-12-30T07:22:24.341Z",
+      "updatedAt": "2025-12-30T07:22:36.585Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
     }
   ],
   "passwords": [],
-  "lastUpdated": "2025-12-30T08:22:18.203Z",
-  "version": 14,
-  "deviceId": "device_1767079223172_97399cf6u"
+  "lastUpdated": "2025-12-30T08:23:09.939Z",
+  "version": 15,
+  "deviceId": "device_1767078289525_79y4vh0je"
 }
