@@ -1,6 +1,14 @@
 {
   "folders": [
     {
+      "id": "1767079418529",
+      "name": "145",
+      "visibility": "public",
+      "createdAt": "2025-12-30T07:23:38.529Z",
+      "updatedAt": "2025-12-30T07:23:38.529Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    },
+    {
       "id": "1767079411473",
       "name": "111",
       "visibility": "public",
@@ -29,10 +37,19 @@
     }
   ],
   "passwords": [],
-  "lastUpdated": "2025-12-30T07:23:33.768Z",
-  "version": 14,
+  "lastUpdated": "2025-12-30T07:23:39.535Z",
+  "version": 15,
   "deviceId": "device_1767078289525_79y4vh0je",
   "modificationHistory": [
+    {
+      "type": "create_folder",
+      "data": {
+        "folderId": "1767079418529",
+        "name": "145"
+      },
+      "timestamp": "2025-12-30T07:23:38.529Z",
+      "deviceId": "device_1767078289525_79y4vh0je"
+    },
     {
       "type": "create_folder",
       "data": {
