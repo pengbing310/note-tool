@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <title>GitHub备忘录 - 初始配置</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
@@ -408,6 +409,7 @@
                 this.testConfigBtn.addEventListener('click', () => this.testConnection());
                 this.useLocalBtn.addEventListener('click', () => this.useLocalStorage());
                 this.importConfigBtn.addEventListener('click', () => this.importConfigFromLink());
+                this.scanQRBtn.addEventListener('click', () => this.scanQRCode());
                 
                 // 监听存储方式变化
                 this.storageTypeRadios.forEach(radio => {
@@ -415,6 +417,51 @@
                         this.localOption.classList.toggle('hidden', e.target.value !== 'local');
                     });
                 });
+            }
+            
+            // 安全的Base64编码（支持中文）
+            safeBtoa(str) {
+                try {
+                    const utf8Bytes = new TextEncoder().encode(str);
+                    let binary = '';
+                    for (let i = 0; i < utf8Bytes.length; i++) {
+                        binary += String.fromCharCode(utf8Bytes[i]);
+                    }
+                    return btoa(binary);
+                } catch (error) {
+                    console.error('safeBtoa error:', error);
+                    // 回退方案
+                    return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, 
+                        (match, p1) => String.fromCharCode('0x' + p1)));
+                }
+            }
+            
+            // 安全的Base64解码（支持中文）
+            safeAtob(base64Str) {
+                try {
+                    const binary = atob(base64Str);
+                    const utf8Bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) {
+                        utf8Bytes[i] = binary.charCodeAt(i);
+                    }
+                    return new TextDecoder().decode(utf8Bytes);
+                } catch (error) {
+                    console.error('safeAtob error:', error);
+                    // 回退方案
+                    return decodeURIComponent(atob(base64Str).split('').map(c => 
+                        '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+                }
+            }
+            
+            // 解码JSON从Base64
+            decodeJSONFromStorage(base64Str) {
+                try {
+                    const jsonStr = this.safeAtob(base64Str);
+                    return JSON.parse(jsonStr);
+                } catch (error) {
+                    console.error('decodeJSONFromStorage error:', error);
+                    return null;
+                }
             }
             
             checkUrlParams() {
@@ -442,10 +489,13 @@
             
             importConfigFromURL(encodedConfig) {
                 try {
-                    const decoded = decodeURIComponent(encodedConfig);
-                    const config = JSON.parse(decoded);
+                    // 1. URL解码
+                    const base64 = decodeURIComponent(encodedConfig);
                     
-                    if (config.username && config.repo && config.token) {
+                    // 2. 安全Base64解码
+                    const config = this.decodeJSONFromStorage(base64);
+                    
+                    if (config && config.username && config.repo && config.token) {
                         // 填充表单
                         this.githubUsername.value = config.username;
                         this.repoName.value = config.repo;
@@ -463,10 +513,15 @@
                         }
                         
                         alert('配置已从URL导入！');
+                        return true;
+                    } else {
+                        alert('配置格式错误或缺少必要字段');
+                        return false;
                     }
                 } catch (error) {
                     console.error('URL配置解析失败:', error);
                     alert('配置导入失败，请检查链接是否正确');
+                    return false;
                 }
             }
             
@@ -484,21 +539,31 @@
                     const configParam = params.get('config');
                     
                     if (configParam) {
-                        this.importConfigFromURL(configParam);
-                        this.importLink.value = '';
+                        if (this.importConfigFromURL(configParam)) {
+                            this.importLink.value = '';
+                        }
                     } else {
                         alert('链接中未找到配置信息');
                     }
                 } catch (error) {
-                    // 如果不是完整URL，尝试直接解析
-                    if (link.startsWith('{')) {
+                    // 如果不是完整URL，尝试直接解析为Base64
+                    if (link.length > 20 && !link.includes(' ')) {
+                        // 可能是直接的Base64编码
                         try {
-                            const config = JSON.parse(link);
-                            const encoded = encodeURIComponent(JSON.stringify(config));
-                            this.importConfigFromURL(encoded);
-                            this.importLink.value = '';
+                            const config = this.decodeJSONFromStorage(link);
+                            if (config) {
+                                // 重新编码为URL参数格式
+                                const jsonStr = JSON.stringify(config);
+                                const base64 = this.safeBtoa(jsonStr);
+                                const encoded = encodeURIComponent(base64);
+                                if (this.importConfigFromURL(encoded)) {
+                                    this.importLink.value = '';
+                                }
+                            } else {
+                                alert('配置格式错误，请检查链接');
+                            }
                         } catch (parseError) {
-                            alert('配置格式错误，请检查链接');
+                            alert('无法解析配置，请提供完整的分享链接');
                         }
                     } else {
                         alert('请提供有效的配置链接');
@@ -506,8 +571,17 @@
                 }
             }
             
+            scanQRCode() {
+                alert('二维码扫描功能需要摄像头权限。\n\n您可以使用手机扫描配置二维码，或直接粘贴分享链接。');
+            }
+            
             async testConnection() {
                 const config = this.getConfig();
+                
+                if (config.storageType !== 'github') {
+                    alert('本地存储模式无需连接测试');
+                    return;
+                }
                 
                 if (!config.username || !config.repo || !config.token) {
                     alert('请先填写所有配置信息');
@@ -597,11 +671,12 @@
                     }
                 }
                 
-                // 加密保存配置（简单base64编码）
+                // 加密保存配置（使用安全Base64编码）
                 const encryptedConfig = {
                     ...config,
-                    // Token仅存储，不显示
-                    token: config.token ? btoa(config.token) : ''
+                    // Token使用安全Base64编码存储
+                    token: config.token ? this.safeBtoa(config.token) : '',
+                    charset: 'UTF-8'
                 };
                 
                 // 保存到localStorage
@@ -618,7 +693,8 @@
                     repo: 'memo-data',
                     token: '',
                     storageType: 'local',
-                    configuredAt: new Date().toISOString()
+                    configuredAt: new Date().toISOString(),
+                    charset: 'UTF-8'
                 };
                 
                 localStorage.setItem('githubMemoConfig', JSON.stringify(config));
