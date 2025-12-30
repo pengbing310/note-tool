@@ -1,6 +1,14 @@
 {
   "folders": [
     {
+      "id": "1767082938203",
+      "name": "123",
+      "visibility": "public",
+      "createdAt": "2025-12-30T08:22:18.203Z",
+      "updatedAt": "2025-12-30T08:22:18.203Z",
+      "deviceId": "device_1767079223172_97399cf6u"
+    },
+    {
       "id": "1767080257965",
       "name": "成本优化",
       "visibility": "public",
@@ -30,7 +38,7 @@
     }
   ],
   "passwords": [],
-  "lastUpdated": "2025-12-30T08:21:52.844Z",
-  "version": 13,
+  "lastUpdated": "2025-12-30T08:22:18.203Z",
+  "version": 14,
   "deviceId": "device_1767079223172_97399cf6u"
 }
