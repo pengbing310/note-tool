@@ -244,4 +244,603 @@ header {
     height: 180px;
     display: flex;
     flex-direction: column;
-    position
+    position: relative;
+}
+
+.memo-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+    border-color: #3498db;
+}
+
+.memo-card h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 0.75rem;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.memo-content {
+    flex: 1;
+    color: #666;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+}
+
+.memo-date {
+    color: #95a5a6;
+    font-size: 0.85rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f0f0f0;
+}
+
+/* 备忘录操作按钮 */
+.memo-actions {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    display: flex;
+    gap: 5px;
+}
+
+.memo-action-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.9);
+    color: #666;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.memo-action-btn:hover {
+    background: #e74c3c;
+    color: white;
+    transform: scale(1.1);
+}
+
+.memo-card:hover .memo-actions {
+    opacity: 1;
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #95a5a6;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    margin-bottom: 1.5rem;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    font-size: 1.5rem;
+    margin-bottom: 0.75rem;
+    color: #2c3e50;
+}
+
+.tip {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: #7f8c8d;
+}
+
+/* 编辑器 */
+.editor-view {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.editor-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: white;
+    margin: 1rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.05);
+    overflow: hidden;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 标题栏 - 优化宽度和高度 */
+.title-bar {
+    padding: 1.25rem 1.5rem;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.title-input {
+    width: 100%;
+    font-size: 1.5rem;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    background: white;
+    transition: all 0.2s;
+}
+
+.title-input:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+/* 内容区域包装器 */
+.content-area-wrapper {
+    flex: 1;
+    padding: 0 1.5rem;
+    min-height: 400px; /* 确保最小高度 */
+}
+
+/* 内容文本框 - 优化大小 */
+.content-textarea {
+    width: 100%;
+    height: 100%;
+    min-height: 400px; /* 电脑端最小高度 */
+    padding: 1.5rem;
+    font-size: 1.1rem;
+    line-height: 1.7;
+    border: none;
+    border-radius: 8px;
+    resize: vertical;
+    font-family: inherit;
+    background: #fafbfc;
+    transition: all 0.2s;
+}
+
+.content-textarea:focus {
+    outline: none;
+    background: white;
+    box-shadow: inset 0 0 0 2px #3498db;
+}
+
+.content-textarea::placeholder {
+    color: #95a5a6;
+    opacity: 0.7;
+}
+
+/* 编辑器底部 */
+.editor-footer {
+    padding: 1rem 1.5rem;
+    background: #f8f9fa;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.editor-info {
+    display: flex;
+    gap: 1.5rem;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.editor-info i {
+    margin-right: 0.5rem;
+    opacity: 0.7;
+}
+
+.editor-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* 状态栏 */
+.status-bar {
+    background: white;
+    border-top: 1px solid #e0e0e0;
+    padding: 0.75rem 1rem;
+}
+
+.status-info {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+/* 按钮样式 */
+.btn {
+    padding: 0.75rem 1.25rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s ease;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    color: white;
+}
+
+.btn-secondary {
+    background: #ecf0f1;
+    color: #2c3e50;
+    border: 1px solid #ddd;
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+    color: white;
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    color: white;
+}
+
+/* 模态框 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(3px);
+    z-index: 1000;
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border-radius: 12px;
+    z-index: 1001;
+    min-width: 90%;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    animation: modalSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -60%);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+    }
+}
+
+.modal.wide {
+    min-width: 600px;
+    max-width: 800px;
+}
+
+.modal-content {
+    padding: 2rem;
+}
+
+.modal-content h3 {
+    margin-bottom: 1.5rem;
+    color: #2c3e50;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+/* 表单 */
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52,152,219,0.1);
+}
+
+/* 可见性选项 */
+.visibility-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.visibility-option {
+    cursor: pointer;
+}
+
+.visibility-option input[type="radio"] {
+    display: none;
+}
+
+.option-content {
+    padding: 1rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: all 0.2s;
+}
+
+.visibility-option input[type="radio"]:checked + .option-content {
+    border-color: #3498db;
+    background: #e3f2fd;
+}
+
+.option-content i {
+    font-size: 1.25rem;
+    color: #3498db;
+}
+
+.option-content strong {
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.option-content small {
+    color: #666;
+    font-size: 0.85rem;
+}
+
+.form-hint {
+    display: block;
+    margin-top: 0.5rem;
+    color: #7f8c8d;
+    font-size: 0.85rem;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 2rem;
+}
+
+/* 确认删除模态框特定样式 */
+#confirmModal .modal-content {
+    text-align: center;
+}
+
+#confirmMessage {
+    margin: 1.5rem 0;
+    font-size: 1.1rem;
+    color: #2d3748;
+}
+
+#confirmDeleteBtn {
+    min-width: 120px;
+}
+
+/* 工具类 */
+.hidden {
+    display: none !important;
+}
+
+/* 响应式设计 */
+@media (max-width: 1024px) {
+    .memo-grid {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .main-content {
+        flex-direction: column;
+    }
+    
+    .sidebar {
+        width: 100%;
+        min-height: auto;
+        max-height: 300px;
+        border-right: none;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .folders-list {
+        max-height: 200px;
+    }
+    
+    .memo-grid {
+        grid-template-columns: 1fr;
+        gap: 0.875rem;
+        padding: 1rem;
+    }
+    
+    .memo-card {
+        height: 160px;
+        padding: 1rem;
+    }
+    
+    .editor-container {
+        margin: 0.75rem;
+    }
+    
+    .title-input {
+        font-size: 1.3rem;
+        padding: 0.625rem 0.875rem;
+    }
+    
+    .content-area-wrapper {
+        padding: 0 1rem;
+    }
+    
+    .content-textarea {
+        min-height: 300px; /* 手机端最小高度 */
+        padding: 1rem;
+        font-size: 1rem;
+    }
+    
+    .editor-footer {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .editor-info {
+        justify-content: center;
+    }
+    
+    .editor-actions {
+        justify-content: center;
+    }
+    
+    .status-info {
+        flex-direction: column;
+        gap: 0.75rem;
+        align-items: center;
+    }
+    
+    .modal {
+        min-width: 95%;
+        padding: 1.5rem;
+    }
+    
+    .memo-list-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .memo-action-btn {
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.8);
+    }
+    
+    .folder-delete-btn {
+        opacity: 1;
+    }
+    
+    .config-status {
+        position: static;
+        margin-top: 10px;
+    }
+    
+    .storage-info {
+        justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    header {
+        padding: 1rem;
+    }
+    
+    .header-content h1 {
+        font-size: 1.5rem;
+    }
+    
+    .sidebar-header {
+        padding: 1rem;
+    }
+    
+    .memo-list-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .memo-list-header h2 {
+        text-align: center;
+    }
+    
+    .btn {
+        padding: 0.625rem 1rem;
+        font-size: 0.95rem;
+    }
+    
+    .content-textarea {
+        min-height: 250px;
+    }
+}
+
+/* 高分辨率适配 */
+@media (min-width: 1920px) {
+    .container {
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+    
+    .content-textarea {
+        min-height: 500px;
+        font-size: 1.2rem;
+    }
+    
+    .memo-card {
+        height: 200px;
+    }
+}
