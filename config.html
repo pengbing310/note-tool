@@ -186,6 +186,32 @@
             margin-bottom: 10px;
         }
         
+        /* 导入配置样式 */
+        .import-section {
+            background: #f0f7ff;
+            border: 2px dashed #3498db;
+            border-radius: 10px;
+            padding: 25px;
+            margin-top: 30px;
+            text-align: center;
+        }
+        
+        .import-section h4 {
+            color: #3498db;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .import-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
         @media (max-width: 768px) {
             .config-container {
                 margin: 20px;
@@ -193,6 +219,10 @@
             }
             
             .form-actions {
+                flex-direction: column;
+            }
+            
+            .import-actions {
                 flex-direction: column;
             }
             
@@ -209,6 +239,26 @@
         <div class="config-header">
             <h1><i class="fas fa-book"></i> GitHub备忘录工具</h1>
             <p>首次使用，请完成以下配置</p>
+        </div>
+
+        <!-- 导入配置区域 -->
+        <div class="import-section">
+            <h4><i class="fas fa-download"></i> 已有配置？一键导入</h4>
+            <p>如果您已有配置链接，可以直接导入：</p>
+            
+            <div class="form-group">
+                <input type="text" id="importLink" class="form-control" 
+                       placeholder="粘贴配置链接或扫描二维码">
+            </div>
+            
+            <div class="import-actions">
+                <button id="importConfigBtn" class="btn btn-primary">
+                    <i class="fas fa-file-import"></i> 导入配置
+                </button>
+                <button id="scanQRBtn" class="btn btn-secondary">
+                    <i class="fas fa-qrcode"></i> 扫描二维码
+                </button>
+            </div>
         </div>
 
         <!-- 配置步骤 -->
@@ -334,6 +384,9 @@
             constructor() {
                 this.initElements();
                 this.bindEvents();
+                
+                // 检查URL参数
+                this.checkUrlParams();
             }
             
             initElements() {
@@ -345,12 +398,16 @@
                 this.storageTypeRadios = document.querySelectorAll('input[name="storageType"]');
                 this.localOption = document.getElementById('localOption');
                 this.useLocalBtn = document.getElementById('useLocalBtn');
+                this.importLink = document.getElementById('importLink');
+                this.importConfigBtn = document.getElementById('importConfigBtn');
+                this.scanQRBtn = document.getElementById('scanQRBtn');
             }
             
             bindEvents() {
                 this.saveConfigBtn.addEventListener('click', () => this.saveConfig());
                 this.testConfigBtn.addEventListener('click', () => this.testConnection());
                 this.useLocalBtn.addEventListener('click', () => this.useLocalStorage());
+                this.importConfigBtn.addEventListener('click', () => this.importConfigFromLink());
                 
                 // 监听存储方式变化
                 this.storageTypeRadios.forEach(radio => {
@@ -358,17 +415,94 @@
                         this.localOption.classList.toggle('hidden', e.target.value !== 'local');
                     });
                 });
-                
-                // 尝试自动填充用户名
-                this.autoFillUsername();
             }
             
-            autoFillUsername() {
-                // 从URL参数获取用户名
+            checkUrlParams() {
                 const params = new URLSearchParams(window.location.search);
+                
+                // 检查是否有配置链接
+                const configParam = params.get('config');
+                if (configParam) {
+                    this.importConfigFromURL(configParam);
+                    return;
+                }
+                
+                // 检查是否有基础参数
                 const user = params.get('user');
+                const repo = params.get('repo');
+                
                 if (user) {
                     this.githubUsername.value = user;
+                }
+                
+                if (repo) {
+                    this.repoName.value = repo;
+                }
+            }
+            
+            importConfigFromURL(encodedConfig) {
+                try {
+                    const decoded = decodeURIComponent(encodedConfig);
+                    const config = JSON.parse(decoded);
+                    
+                    if (config.username && config.repo && config.token) {
+                        // 填充表单
+                        this.githubUsername.value = config.username;
+                        this.repoName.value = config.repo;
+                        this.githubToken.value = config.token;
+                        
+                        // 设置存储类型
+                        if (config.storageType) {
+                            const radios = document.querySelectorAll('input[name="storageType"]');
+                            radios.forEach(radio => {
+                                if (radio.value === config.storageType) {
+                                    radio.checked = true;
+                                    radio.dispatchEvent(new Event('change'));
+                                }
+                            });
+                        }
+                        
+                        alert('配置已从URL导入！');
+                    }
+                } catch (error) {
+                    console.error('URL配置解析失败:', error);
+                    alert('配置导入失败，请检查链接是否正确');
+                }
+            }
+            
+            importConfigFromLink() {
+                const link = this.importLink.value.trim();
+                if (!link) {
+                    alert('请输入配置链接');
+                    return;
+                }
+                
+                try {
+                    // 尝试从链接中提取配置参数
+                    const url = new URL(link);
+                    const params = new URLSearchParams(url.search);
+                    const configParam = params.get('config');
+                    
+                    if (configParam) {
+                        this.importConfigFromURL(configParam);
+                        this.importLink.value = '';
+                    } else {
+                        alert('链接中未找到配置信息');
+                    }
+                } catch (error) {
+                    // 如果不是完整URL，尝试直接解析
+                    if (link.startsWith('{')) {
+                        try {
+                            const config = JSON.parse(link);
+                            const encoded = encodeURIComponent(JSON.stringify(config));
+                            this.importConfigFromURL(encoded);
+                            this.importLink.value = '';
+                        } catch (parseError) {
+                            alert('配置格式错误，请检查链接');
+                        }
+                    } else {
+                        alert('请提供有效的配置链接');
+                    }
                 }
             }
             
@@ -473,27 +607,8 @@
                 // 保存到localStorage
                 localStorage.setItem('githubMemoConfig', JSON.stringify(encryptedConfig));
                 
-                // 如果是GitHub存储，测试连接
-                if (config.storageType === 'github' && config.token) {
-                    try {
-                        // 快速测试连接
-                        await fetch(`https://api.github.com/user`, {
-                            headers: {
-                                'Authorization': `token ${config.token}`,
-                                'Accept': 'application/vnd.github.v3+json'
-                            }
-                        });
-                        
-                        // 跳转到主页面
-                        window.location.href = 'index.html';
-                    } catch (error) {
-                        alert('配置已保存，但连接测试失败。\n您仍然可以使用本地模式，或者稍后重新配置。');
-                        window.location.href = 'index.html';
-                    }
-                } else {
-                    // 本地存储直接跳转
-                    window.location.href = 'index.html';
-                }
+                // 跳转到主页面
+                window.location.href = 'index.html';
             }
             
             useLocalStorage() {

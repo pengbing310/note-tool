@@ -50,6 +50,54 @@ header {
     font-size: 0.95rem;
 }
 
+/* 头部操作按钮 */
+.header-actions {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    gap: 10px;
+}
+
+/* 分享相关样式 */
+.share-link-container {
+    display: flex;
+    gap: 10px;
+    margin: 15px 0;
+}
+
+.share-link-container input {
+    flex: 1;
+    font-family: monospace;
+    font-size: 0.9rem;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.share-warning {
+    background: #fff5f5;
+    border: 1px solid #fed7d7;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 15px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.share-warning i {
+    color: #e74c3c;
+    margin-top: 2px;
+}
+
+.share-warning p {
+    margin: 0;
+    color: #c53030;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
 /* 主内容区 */
 .main-content {
     display: flex;
@@ -313,7 +361,7 @@ header {
     color: #7f8c8d;
 }
 
-/* 编辑器 - 修复输入框太小的问题 */
+/* 编辑器 */
 .editor-view {
     height: 100%;
     display: flex;
@@ -331,7 +379,7 @@ header {
     box-shadow: 0 2px 15px rgba(0,0,0,0.05);
     overflow: hidden;
     animation: slideIn 0.3s ease-out;
-    width: calc(100% - 2rem); /* 确保宽度正确 */
+    width: calc(100% - 2rem);
 }
 
 @keyframes slideIn {
@@ -345,24 +393,24 @@ header {
     }
 }
 
-/* 标题栏 - 修复：增大输入框 */
+/* 标题栏 */
 .title-bar {
     padding: 1.25rem 1.5rem;
     background: #f8f9fa;
     border-bottom: 1px solid #e0e0e0;
-    flex-shrink: 0; /* 防止被压缩 */
+    flex-shrink: 0;
 }
 
 .title-input {
     width: 100%;
-    font-size: 1.8rem !important; /* 增大字体 */
+    font-size: 1.8rem !important;
     font-weight: 600;
-    padding: 1rem 1.2rem !important; /* 增大内边距 */
+    padding: 1rem 1.2rem !important;
     border: 2px solid #e0e0e0;
     border-radius: 10px;
     background: white;
     transition: all 0.2s;
-    min-height: 60px !important; /* 确保最小高度 */
+    min-height: 60px !important;
     box-sizing: border-box;
     line-height: 1.4;
 }
@@ -373,22 +421,22 @@ header {
     box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
-/* 内容区域包装器 - 修复：确保足够的空间 */
+/* 内容区域包装器 */
 .content-area-wrapper {
     flex: 1;
     padding: 0 1.5rem;
-    min-height: 500px; /* 增加最小高度 */
+    min-height: 500px;
     display: flex;
     flex-direction: column;
 }
 
-/* 内容文本框 - 修复：增大输入区域 */
+/* 内容文本框 */
 .content-textarea {
     width: 100%;
     flex: 1;
-    min-height: 500px !important; /* 增大最小高度 */
+    min-height: 500px !important;
     padding: 1.5rem !important;
-    font-size: 1.2rem !important; /* 增大字体 */
+    font-size: 1.2rem !important;
     line-height: 1.8;
     border: 2px solid #e0e0e0;
     border-radius: 10px;
@@ -502,6 +550,11 @@ header {
 .btn-danger {
     background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
     color: white;
+}
+
+.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
 }
 
 /* 模态框 */
@@ -776,6 +829,16 @@ header {
     
     .folder-delete-btn {
         opacity: 1;
+    }
+    
+    .header-actions {
+        position: static;
+        margin-top: 10px;
+        justify-content: center;
+    }
+    
+    .share-link-container {
+        flex-direction: column;
     }
 }
 
