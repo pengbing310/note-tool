@@ -98,21 +98,26 @@
                         <!-- 底部工具栏 -->
                         <div class="editor-footer">
                             <div class="editor-info">
-                                <span><i class="fas fa-font"></i> <span id="charCount">0</span> 字符</span>
-                                <span><i class="fas fa-clock"></i> <span id="lastModified">刚刚</span></span>
+                                <span class="char-count"><i class="fas fa-font"></i> <span id="charCount">0</span></span>
+                                <span class="modified-time"><i class="fas fa-clock"></i> <span id="lastModified">刚刚</span></span>
+                                <span class="auto-save-status" id="autoSaveStatus"></span>
                             </div>
                             <div class="editor-actions">
-                                <button id="exportMemoBtn" class="btn btn-secondary">
-                                    <i class="fas fa-download"></i> 导出
+                                <button id="exportMemoBtn" class="btn btn-secondary btn-icon-text">
+                                    <i class="fas fa-download"></i>
+                                    <span class="btn-text">导出</span>
                                 </button>
-                                <button id="deleteMemoBtn" class="btn btn-danger">
-                                    <i class="fas fa-trash"></i> 删除
+                                <button id="deleteMemoBtn" class="btn btn-danger btn-icon-text">
+                                    <i class="fas fa-trash"></i>
+                                    <span class="btn-text">删除</span>
                                 </button>
-                                <button id="saveMemoBtn" class="btn btn-primary">
-                                    <i class="fas fa-save"></i> 保存
+                                <button id="saveMemoBtn" class="btn btn-primary btn-icon-text">
+                                    <i class="fas fa-save"></i>
+                                    <span class="btn-text">保存</span>
                                 </button>
-                                <button id="closeEditorBtn" class="btn btn-secondary">
-                                    <i class="fas fa-times"></i> 关闭
+                                <button id="closeEditorBtn" class="btn btn-secondary btn-icon-text">
+                                    <i class="fas fa-times"></i>
+                                    <span class="btn-text">关闭</span>
                                 </button>
                             </div>
                         </div>
@@ -242,6 +247,12 @@
     <div id="syncStatusIndicator" class="sync-status-indicator hidden">
         <i class="fas fa-sync-alt fa-spin"></i>
         <span>正在同步...</span>
+    </div>
+
+    <!-- 移动端返回提示 -->
+    <div id="mobileBackHint" class="mobile-back-hint hidden">
+        <i class="fas fa-arrow-left"></i>
+        <span>向右滑动返回列表</span>
     </div>
 
     <script>

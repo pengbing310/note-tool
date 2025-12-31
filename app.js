@@ -45,11 +45,15 @@ class GitHubMemo {
         this.processingQueue = false;
         this.syncConflicts = [];
         
+        // 移动端检测
+        this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
         console.log('GitHubMemo 初始化完成', {
             deviceId: this.deviceId,
             deviceName: this.deviceName,
             dataVersion: this.dataVersion,
-            lastSyncTime: this.lastSyncTime ? new Date(this.lastSyncTime).toLocaleString() : '从未同步'
+            lastSyncTime: this.lastSyncTime ? new Date(this.lastSyncTime).toLocaleString() : '从未同步',
+            isMobile: this.isMobile
         });
     }
     
@@ -263,7 +267,7 @@ class GitHubMemo {
         }
     }
     
-    // ========== GitHub API 交互（修复CORS问题） ==========
+    // ========== GitHub API 交互 ==========
     
     async fetchFromGitHub() {
         const { username, repo, token } = this.config;
@@ -272,19 +276,15 @@ class GitHubMemo {
         console.log('从GitHub获取数据:', apiUrl);
         
         try {
-            // 修复CORS问题的请求头
             const headers = {
                 'Authorization': `token ${token}`,
                 'Accept': 'application/vnd.github.v3+json',
-                // 移除可能引起CORS问题的headers
-                // 'Cache-Control': 'no-cache' // 这个header会引起CORS问题
             };
             
-            // 对于GitHub Pages，使用更简单的请求
             const response = await fetch(apiUrl, {
                 headers: headers,
-                mode: 'cors', // 明确指定CORS模式
-                credentials: 'omit' // 不发送credentials
+                mode: 'cors',
+                credentials: 'omit'
             });
             
             if (response.ok) {
@@ -382,7 +382,6 @@ class GitHubMemo {
             
             // 获取当前文件的SHA
             try {
-                // 使用简单的headers避免CORS问题
                 const headers = {
                     'Authorization': `token ${token}`,
                     'Accept': 'application/vnd.github.v3+json'
@@ -1041,6 +1040,238 @@ class GitHubMemo {
         }
     }
     
+    // ========== 移动端优化 ==========
+    
+    addMobileOptimizations() {
+        console.log('添加移动端优化...');
+        
+        if (this.isMobile) {
+            // 调整编辑器区域高度
+            this.adjustEditorForMobile();
+            
+            // 添加键盘事件处理
+            this.addKeyboardHandling();
+            
+            // 优化触摸事件
+            this.optimizeTouchEvents();
+            
+            // 添加返回按钮处理
+            this.addBackButtonHandler();
+        }
+    }
+    
+    adjustEditorForMobile() {
+        // 在移动设备上，调整编辑器高度
+        if (this.memoContent && window.innerHeight < 800) {
+            const viewportHeight = window.innerHeight;
+            const editorHeight = viewportHeight * 0.6; // 使用60%的屏幕高度
+            this.memoContent.style.minHeight = `${editorHeight}px`;
+            
+            console.log('调整编辑器高度:', editorHeight);
+        }
+    }
+    
+    addKeyboardHandling() {
+        // 处理虚拟键盘弹出
+        if (this.memoContent) {
+            this.memoContent.addEventListener('focus', () => {
+                setTimeout(() => {
+                    if (this.isMobile) {
+                        // 滚动到可见区域
+                        this.memoContent.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'center' 
+                        });
+                    }
+                }, 300);
+            });
+        }
+    }
+    
+    optimizeTouchEvents() {
+        // 优化触摸事件，防止双击缩放
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 1) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+        
+        // 优化按钮触摸反馈
+        const buttons = document.querySelectorAll('.btn, .memo-action-btn, .folder-delete-btn');
+        buttons.forEach(button => {
+            button.addEventListener('touchstart', () => {
+                button.style.transform = 'scale(0.95)';
+            });
+            
+            button.addEventListener('touchend', () => {
+                button.style.transform = 'scale(1)';
+            });
+        });
+    }
+    
+    addBackButtonHandler() {
+        // 在移动端添加返回按钮处理
+        if (this.isMobile) {
+            // 监听安卓返回按钮
+            window.addEventListener('popstate', (e) => {
+                if (this.editorView && !this.editorView.classList.contains('hidden')) {
+                    // 如果正在编辑，先关闭编辑器
+                    this.closeEditor();
+                    e.preventDefault();
+                }
+            });
+        }
+    }
+    
+    adjustMobileLayout() {
+        if (this.isMobile) {
+            // 重新调整布局
+            this.adjustEditorForMobile();
+            
+            // 更新按钮可见性
+            if (window.innerWidth < 480) {
+                // 超小屏幕优化
+                this.optimizeForVerySmallScreen();
+            }
+        }
+    }
+    
+    optimizeForVerySmallScreen() {
+        // 超小屏幕进一步优化
+        const buttons = document.querySelectorAll('.btn');
+        buttons.forEach(button => {
+            const originalText = button.textContent;
+            const hasIcon = button.querySelector('i');
+            
+            if (hasIcon && originalText.length > 2) {
+                // 只保留图标，隐藏文字
+                const span = button.querySelector('span');
+                if (span) {
+                    span.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    // ========== 移动端手势支持 ==========
+    
+    addTouchGestures() {
+        console.log('添加移动端手势支持...');
+        
+        if (!this.isMobile) return;
+        
+        // 滑动返回手势
+        let touchStartX = 0;
+        let touchStartY = 0;
+        
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+        
+        document.addEventListener('touchend', (e) => {
+            if (!this.editorView || this.editorView.classList.contains('hidden')) {
+                return;
+            }
+            
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            
+            const deltaX = touchEndX - touchStartX;
+            const deltaY = touchEndY - touchStartY;
+            
+            // 水平滑动超过100px，垂直滑动少于50px
+            if (Math.abs(deltaX) > 100 && Math.abs(deltaY) < 50) {
+                // 从左向右滑动（返回）
+                if (deltaX > 0) {
+                    this.closeEditor();
+                }
+            }
+        }, { passive: true });
+    }
+    
+    // ========== 自动保存功能 ==========
+    
+    setupAutoSave() {
+        if (!this.memoTitle || !this.memoContent) return;
+        
+        let saveTimer = null;
+        const saveDelay = 2000; // 2秒后自动保存
+        let isModified = false;
+        
+        const checkModified = () => {
+            if (!this.currentMemo) return false;
+            
+            const title = this.memoTitle.value.trim();
+            const content = this.memoContent.value.trim();
+            
+            return title !== this.currentMemo.title || 
+                   content !== this.currentMemo.content;
+        };
+        
+        const triggerAutoSave = () => {
+            if (!checkModified()) {
+                isModified = false;
+                return;
+            }
+            
+            if (!isModified) {
+                this.showAutoSaveStatus('有修改未保存', 'warning');
+                isModified = true;
+            }
+            
+            if (saveTimer) {
+                clearTimeout(saveTimer);
+            }
+            
+            saveTimer = setTimeout(() => {
+                if (checkModified()) {
+                    this.saveMemo();
+                    isModified = false;
+                }
+            }, saveDelay);
+        };
+        
+        this.memoTitle.addEventListener('input', triggerAutoSave);
+        this.memoContent.addEventListener('input', triggerAutoSave);
+    }
+    
+    showAutoSaveStatus(message, type = 'info') {
+        const statusEl = document.getElementById('autoSaveStatus');
+        if (!statusEl) return;
+        
+        statusEl.textContent = message;
+        statusEl.style.color = type === 'success' ? '#2ecc71' : 
+                              type === 'error' ? '#e74c3c' : 
+                              type === 'warning' ? '#f39c12' : '#3498db';
+        
+        // 3秒后清除
+        if (statusEl.clearTimeout) {
+            clearTimeout(statusEl.clearTimeout);
+        }
+        
+        statusEl.clearTimeout = setTimeout(() => {
+            statusEl.textContent = '';
+        }, 3000);
+    }
+    
+    // ========== 移动端返回提示 ==========
+    
+    toggleMobileBackHint(show) {
+        const hint = document.getElementById('mobileBackHint');
+        if (!hint) return;
+        
+        if (show && this.isMobile) {
+            hint.classList.remove('hidden');
+            // 5秒后自动隐藏
+            setTimeout(() => {
+                hint.classList.add('hidden');
+            }, 5000);
+        } else {
+            hint.classList.add('hidden');
+        }
+    }
+    
     // ========== 应用初始化 ==========
     
     init() {
@@ -1058,6 +1289,16 @@ class GitHubMemo {
         
         this.initElements();
         this.bindEvents();
+        
+        // 添加移动端优化
+        this.addMobileOptimizations();
+        
+        // 添加触摸手势支持
+        this.addTouchGestures();
+        
+        // 设置自动保存
+        this.setupAutoSave();
+        
         this.loadData();
         
         // 监听网络状态
@@ -1097,6 +1338,13 @@ class GitHubMemo {
             // 显示同步状态
             this.updateSyncStatusDisplay();
         }
+        
+        // 监听窗口大小变化，调整移动端布局
+        window.addEventListener('resize', () => {
+            if (this.isMobile) {
+                this.adjustMobileLayout();
+            }
+        });
         
         console.log('应用初始化完成');
     }
@@ -1175,7 +1423,7 @@ class GitHubMemo {
     bindEvents() {
         console.log('绑定事件...');
         
-        // 绑定事件（与之前相同）
+        // 绑定事件
         if (this.newFolderBtn) {
             this.newFolderBtn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -1316,191 +1564,6 @@ class GitHubMemo {
         }
         
         console.log('事件绑定完成');
-// ========== 移动端优化 ==========
-
-addMobileOptimizations() {
-    console.log('添加移动端优化...');
-    
-    // 检测是否为移动设备
-    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    console.log('是否为移动设备:', this.isMobile);
-    
-    if (this.isMobile) {
-        // 调整编辑器区域高度
-        this.adjustEditorForMobile();
-        
-        // 添加键盘事件处理
-        this.addKeyboardHandling();
-        
-        // 优化触摸事件
-        this.optimizeTouchEvents();
-        
-        // 添加返回按钮处理
-        this.addBackButtonHandler();
-    }
-}
-
-adjustEditorForMobile() {
-    // 在移动设备上，调整编辑器高度
-    if (this.memoContent && window.innerHeight < 800) {
-        const viewportHeight = window.innerHeight;
-        const editorHeight = viewportHeight * 0.6; // 使用60%的屏幕高度
-        this.memoContent.style.minHeight = `${editorHeight}px`;
-        
-        console.log('调整编辑器高度:', editorHeight);
-    }
-}
-
-addKeyboardHandling() {
-    // 处理虚拟键盘弹出
-    if (this.memoContent) {
-        this.memoContent.addEventListener('focus', () => {
-            setTimeout(() => {
-                if (this.isMobile) {
-                    // 滚动到可见区域
-                    this.memoContent.scrollIntoView({ 
-                        behavior: 'smooth', 
-                        block: 'center' 
-                    });
-                }
-            }, 300);
-        });
-    }
-}
-
-optimizeTouchEvents() {
-    // 优化触摸事件，防止双击缩放
-    document.addEventListener('touchstart', (e) => {
-        if (e.touches.length > 1) {
-            e.preventDefault();
-        }
-    }, { passive: false });
-    
-    // 优化按钮触摸反馈
-    const buttons = document.querySelectorAll('.btn, .memo-action-btn, .folder-delete-btn');
-    buttons.forEach(button => {
-        button.addEventListener('touchstart', () => {
-            button.style.transform = 'scale(0.95)';
-        });
-        
-        button.addEventListener('touchend', () => {
-            button.style.transform = 'scale(1)';
-        });
-    });
-}
-
-addBackButtonHandler() {
-    // 在移动端添加返回按钮处理
-    if (this.isMobile) {
-        // 监听安卓返回按钮
-        window.addEventListener('popstate', (e) => {
-            if (this.editorView && !this.editorView.classList.contains('hidden')) {
-                // 如果正在编辑，先关闭编辑器
-                this.closeEditor();
-                e.preventDefault();
-            }
-        });
-    }
-}
-
-// ========== 在 init() 方法中调用移动端优化 ==========
-
-init() {
-    console.log('初始化应用...配置状态:', this.config.configured);
-    
-    if (!this.config.configured) {
-        console.log('未配置，跳转到配置页面');
-        setTimeout(() => {
-            if (!window.location.href.includes('config.html')) {
-                window.location.href = 'config.html';
-            }
-        }, 100);
-        return;
-    }
-    
-    this.initElements();
-    this.bindEvents();
-    
-    // 添加移动端优化
-    this.addMobileOptimizations();
-    
-    this.loadData();
-    
-    // 监听网络状态
-    window.addEventListener('online', () => {
-        this.networkStatus = 'online';
-        this.showNotification('网络已连接', 'success');
-        
-        // 如果是GitHub模式，网络恢复时立即同步
-        if (this.config.storageType === 'github') {
-            setTimeout(() => {
-                if (!this.syncing) {
-                    console.log('网络恢复，自动同步');
-                    this.syncWithGitHub();
-                }
-            }, 2000);
-        }
-    });
-    
-    window.addEventListener('offline', () => {
-        this.networkStatus = 'offline';
-        this.showNotification('网络已断开', 'warning');
-    });
-    
-    // 如果是GitHub模式，启动自动同步
-    if (this.config.storageType === 'github') {
-        this.startAutoSync();
-        
-        // 页面获取焦点时同步
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden && 
-                this.networkStatus === 'online' && 
-                !this.syncing) {
-                setTimeout(() => this.syncWithGitHub(), 1000);
-            }
-        });
-        
-        // 显示同步状态
-        this.updateSyncStatusDisplay();
-    }
-    
-    // 监听窗口大小变化，调整移动端布局
-    window.addEventListener('resize', () => {
-        this.adjustMobileLayout();
-    });
-    
-    console.log('应用初始化完成');
-}
-
-adjustMobileLayout() {
-    if (this.isMobile) {
-        // 重新调整布局
-        this.adjustEditorForMobile();
-        
-        // 更新按钮可见性
-        if (window.innerWidth < 480) {
-            // 超小屏幕优化
-            this.optimizeForVerySmallScreen();
-        }
-    }
-}
-
-optimizeForVerySmallScreen() {
-    // 超小屏幕进一步优化
-    const buttons = document.querySelectorAll('.btn');
-    buttons.forEach(button => {
-        const originalText = button.textContent;
-        const hasIcon = button.querySelector('i');
-        
-        if (hasIcon && originalText.length > 2) {
-            // 只保留图标，隐藏文字
-            const span = button.querySelector('span');
-            if (span) {
-                span.style.display = 'none';
-            }
-        }
-    });
-}
     }
     
     // ========== 数据加载和保存 ==========
@@ -1710,7 +1773,6 @@ optimizeForVerySmallScreen() {
         });
     }
     
-    // 其他UI方法保持不变...
     showNewFolderModal() {
         console.log('显示新建文件夹模态框');
         if (!this.newFolderModal || !this.folderNameInput) {
@@ -2037,15 +2099,25 @@ optimizeForVerySmallScreen() {
         
         this.saveLocalData();
         
-        // 立即同步到GitHub
+        // 显示自动保存状态
+        this.showAutoSaveStatus('已保存', 'success');
+        
+        // 如果是GitHub模式，异步同步
         if (this.config.storageType === 'github') {
-            console.log('立即同步保存备忘录');
-            this.syncWithGitHub();
+            console.log('同步保存备忘录');
+            // 异步同步，不阻塞用户操作
+            setTimeout(() => {
+                this.syncWithGitHub().catch(error => {
+                    console.error('同步失败:', error);
+                    this.showAutoSaveStatus('同步失败', 'error');
+                });
+            }, 100);
         } else {
             this.renderMemos();
         }
         
-        this.showNotification('备忘录已保存: ' + title, 'success');
+        // 只有在手动保存时才显示大通知
+        // this.showNotification('备忘录已保存: ' + title, 'success');
     }
     
     // ========== 删除操作 ==========
@@ -2287,6 +2359,9 @@ optimizeForVerySmallScreen() {
         this.memoListView.classList.remove('hidden');
         this.editorView.classList.add('hidden');
         this.currentMemo = null;
+        
+        // 隐藏移动端返回提示
+        this.toggleMobileBackHint(false);
     }
     
     showEditor() {
@@ -2294,9 +2369,15 @@ optimizeForVerySmallScreen() {
         
         this.memoListView.classList.add('hidden');
         this.editorView.classList.remove('hidden');
+        
+        // 显示移动端返回提示
+        this.toggleMobileBackHint(true);
     }
     
     closeEditor() {
+        // 隐藏移动端返回提示
+        this.toggleMobileBackHint(false);
+        
         if (this.currentMemo && 
             (this.memoTitle.value.trim() !== this.currentMemo.title || 
              this.memoContent.value.trim() !== this.currentMemo.content)) {
