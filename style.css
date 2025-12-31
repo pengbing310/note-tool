@@ -13,7 +13,6 @@ body {
     min-height: 100vh;
 }
 
-/* 容器 */
 .container {
     display: flex;
     flex-direction: column;
@@ -50,7 +49,6 @@ header {
     font-size: 0.95rem;
 }
 
-/* 头部操作按钮 */
 .header-actions {
     position: absolute;
     top: 1rem;
@@ -94,7 +92,6 @@ header {
     gap: 0.5rem;
 }
 
-/* 文件夹列表 */
 .folders-list {
     flex: 1;
     overflow-y: auto;
@@ -148,7 +145,6 @@ header {
 }
 
 .folder-icon {
-    margin-right: 0.75rem;
     font-size: 1.1rem;
 }
 
@@ -168,7 +164,6 @@ header {
     font-size: 0.8rem;
 }
 
-/* 文件夹删除按钮 */
 .folder-delete-btn {
     position: absolute;
     right: 10px;
@@ -301,7 +296,6 @@ header {
     margin-left: 10px;
 }
 
-/* 备忘录操作按钮 */
 .memo-actions {
     position: absolute;
     top: 10px;
@@ -777,8 +771,8 @@ header {
     }
     
     .modal {
-        min-width: 90% !important;
-        max-width: 95% !important;
+        min-width: 90%;
+        max-width: 95%;
         margin: 10px;
     }
     
@@ -811,6 +805,14 @@ header {
 }
 
 @media (max-width: 480px) {
+    header {
+        padding: 1rem;
+    }
+    
+    .header-content h1 {
+        font-size: 1.5rem;
+    }
+    
     .title-input {
         font-size: 1.3rem;
         min-height: 48px;
