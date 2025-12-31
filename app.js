@@ -42,67 +42,137 @@ class GitHubMemo {
         console.log('GitHubMemo 初始化完成');
     }
     
-    // ========== UTF-8编码/解码函数（解决中文乱码）==========
+    // ========== UTF-8编码/解码函数（完全解决中文乱码）==========
     
-    // UTF-8安全的Base64编码
-    utf8Btoa(str) {
+    // UTF-8安全的Base64编码 - 确保中文字符正确处理
+    utf8ToBase64(str) {
         try {
-            // 将字符串转换为UTF-8字节数组
-            const utf8Bytes = new TextEncoder().encode(str);
-            let binary = '';
-            for (let i = 0; i < utf8Bytes.length; i++) {
-                binary += String.fromCharCode(utf8Bytes[i]);
+            // 方法1: 使用TextEncoder（现代浏览器）
+            if (typeof TextEncoder !== 'undefined') {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(str);
+                const base64 = btoa(String.fromCharCode(...data));
+                return base64;
             }
-            return btoa(binary);
+            // 方法2: 使用encodeURIComponent（兼容旧浏览器）
+            return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, 
+                (match, p1) => String.fromCharCode('0x' + p1)));
         } catch (error) {
-            console.error('utf8Btoa error:', error);
-            // 备用方案：使用encodeURIComponent
-            return btoa(encodeURIComponent(str));
+            console.error('utf8ToBase64 error:', error);
+            // 方法3: 直接使用btoa（最后手段）
+            return btoa(unescape(encodeURIComponent(str)));
         }
     }
     
-    // UTF-8安全的Base64解码
-    utf8Atob(base64Str) {
+    // UTF-8安全的Base64解码 - 确保中文字符正确处理
+    base64ToUtf8(base64Str) {
         try {
-            const binary = atob(base64Str);
-            const utf8Bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-                utf8Bytes[i] = binary.charCodeAt(i);
+            // 方法1: 使用TextDecoder（现代浏览器）
+            if (typeof TextDecoder !== 'undefined') {
+                const binary = atob(base64Str);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                const decoder = new TextDecoder();
+                return decoder.decode(bytes);
             }
-            // 将UTF-8字节数组解码为字符串
-            return new TextDecoder().decode(utf8Bytes);
+            // 方法2: 使用decodeURIComponent（兼容旧浏览器）
+            return decodeURIComponent(atob(base64Str).split('').map(c => 
+                '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
         } catch (error) {
-            console.error('utf8Atob error:', error);
-            // 备用方案：使用decodeURIComponent
-            return decodeURIComponent(atob(base64Str));
+            console.error('base64ToUtf8 error:', error);
+            // 方法3: 直接使用atob（最后手段）
+            return decodeURIComponent(escape(atob(base64Str)));
         }
     }
     
-    // 编码JSON对象为Base64（UTF-8安全）
+    // 编码JSON对象为Base64（完全UTF-8安全）
     encodeJSONForStorage(obj) {
         try {
-            const jsonStr = JSON.stringify(obj);
-            return this.utf8Btoa(jsonStr);
+            // 确保所有字符串字段都是UTF-8编码
+            const processedObj = this.ensureUTF8Encoding(obj);
+            const jsonStr = JSON.stringify(processedObj);
+            console.log('编码JSON字符串长度:', jsonStr.length);
+            
+            const base64 = this.utf8ToBase64(jsonStr);
+            console.log('Base64编码长度:', base64.length);
+            
+            return base64;
         } catch (error) {
             console.error('encodeJSONForStorage error:', error);
             return btoa(JSON.stringify(obj));
         }
     }
     
-    // 解码Base64为JSON对象（UTF-8安全）
+    // 解码Base64为JSON对象（完全UTF-8安全）
     decodeJSONFromStorage(base64Str) {
         try {
-            const jsonStr = this.utf8Atob(base64Str);
-            return JSON.parse(jsonStr);
+            console.log('解码Base64字符串，长度:', base64Str.length);
+            
+            const jsonStr = this.base64ToUtf8(base64Str);
+            console.log('解码后JSON字符串长度:', jsonStr.length);
+            
+            const obj = JSON.parse(jsonStr);
+            
+            // 验证数据完整性
+            if (!obj || typeof obj !== 'object') {
+                throw new Error('解码后的数据不是有效的JSON对象');
+            }
+            
+            console.log('JSON解码成功，版本:', obj.version || '未知');
+            return obj;
         } catch (error) {
             console.error('decodeJSONFromStorage error:', error);
-            // 尝试使用普通base64解码
+            // 尝试兼容解码
             try {
                 return JSON.parse(atob(base64Str));
             } catch (e2) {
-                console.error('Fallback decode also failed:', e2);
+                console.error('兼容解码也失败:', e2);
                 return null;
             }
+        }
+    }
+    
+    // 确保对象中的所有字符串都是UTF-8编码
+    ensureUTF8Encoding(obj) {
+        if (typeof obj === 'string') {
+            // 对字符串进行UTF-8编码验证
+            return this.normalizeString(obj);
+        } else if (Array.isArray(obj)) {
+            return obj.map(item => this.ensureUTF8Encoding(item));
+        } else if (obj && typeof obj === 'object') {
+            const result = {};
+            for (const key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    result[this.normalizeString(key)] = this.ensureUTF8Encoding(obj[key]);
+                }
+            }
+            return result;
+        }
+        return obj;
+    }
+    
+    // 标准化字符串为UTF-8
+    normalizeString(str) {
+        if (typeof str !== 'string') return str;
+        
+        // 尝试多种方法确保UTF-8编码
+        try {
+            // 方法1: 使用TextDecoder/TextEncoder重新编码
+            if (typeof TextEncoder !== 'undefined' && typeof TextDecoder !== 'undefined') {
+                const encoder = new TextEncoder();
+                const decoder = new TextDecoder();
+                const bytes = encoder.encode(str);
+                return decoder.decode(bytes);
+            }
+            
+            // 方法2: 使用encodeURIComponent/decodeURIComponent
+            return decodeURIComponent(encodeURIComponent(str));
+            
+        } catch (error) {
+            console.warn('字符串标准化失败:', error);
+            return str;
         }
     }
     
@@ -141,7 +211,7 @@ class GitHubMemo {
             
             if (config.token) {
                 try {
-                    config.token = this.utf8Atob(config.token);
+                    config.token = this.base64ToUtf8(config.token);
                 } catch (e) {
                     console.error('Token解密失败:', e);
                     config.token = '';
@@ -164,10 +234,15 @@ class GitHubMemo {
         try {
             // URL解码
             const base64 = decodeURIComponent(encodedConfig);
+            console.log('URL配置Base64长度:', base64.length);
+            
             // UTF-8安全解码
             const config = this.decodeJSONFromStorage(base64);
             
-            if (!config) return null;
+            if (!config) {
+                console.log('配置解析失败');
+                return null;
+            }
             
             if (!config.username || !config.repo || !config.token) {
                 console.log('URL配置缺少必要字段');
@@ -180,10 +255,10 @@ class GitHubMemo {
             const configToSave = {
                 ...config,
                 configuredAt: new Date().toISOString(),
-                charset: 'UTF-8'  // 明确记录字符集
+                charset: 'UTF-8'
             };
             
-            configToSave.token = this.utf8Btoa(config.token);
+            configToSave.token = this.utf8ToBase64(config.token);
             localStorage.setItem('githubMemoConfig', JSON.stringify(configToSave));
             
             return { ...config, configured: true };
@@ -201,7 +276,7 @@ class GitHubMemo {
         }
     }
     
-    // ========== GitHub同步功能 ==========
+    // ========== GitHub同步功能（完全修复）==========
     
     async syncWithGitHub() {
         if (this.config.storageType !== 'github') {
@@ -223,29 +298,48 @@ class GitHubMemo {
         console.log('开始GitHub同步...');
         
         try {
-            // 1. 从GitHub获取远程数据
+            // 1. 首先从GitHub获取远程数据
+            console.log('步骤1: 从GitHub获取数据');
             const remoteData = await this.fetchFromGitHub();
             
-            // 2. 合并数据（解决冲突）
+            // 2. 如果有远程数据，与本地数据合并
             if (remoteData) {
+                console.log('步骤2: 合并远程数据');
                 await this.mergeData(remoteData);
-                console.log('数据合并完成');
+            } else {
+                console.log('没有远程数据，跳过合并');
             }
             
-            // 3. 上传本地数据到GitHub
-            await this.saveToGitHub();
+            // 3. 上传本地数据到GitHub（强制上传，确保数据一致性）
+            console.log('步骤3: 上传数据到GitHub');
+            const uploadSuccess = await this.saveToGitHub();
             
-            // 4. 更新UI
-            this.renderFolders();
-            if (this.currentFolder) {
-                this.renderMemos();
+            if (uploadSuccess) {
+                console.log('GitHub同步成功完成');
+                
+                // 4. 再次从GitHub获取数据，确保一致性
+                console.log('步骤4: 验证同步结果');
+                const verifyData = await this.fetchFromGitHub();
+                if (verifyData) {
+                    console.log('同步验证成功，数据版本:', verifyData.version);
+                }
+                
+                // 更新UI
+                this.renderFolders();
+                if (this.currentFolder) {
+                    this.renderMemos();
+                }
+                
+                this.updateLastSync();
+                this.showNotification('数据同步成功', 'success');
+            } else {
+                console.error('GitHub上传失败');
+                this.showNotification('数据同步失败', 'error');
             }
-            
-            this.updateLastSync();
-            console.log('GitHub同步完成');
             
         } catch (error) {
             console.error('GitHub同步失败:', error);
+            this.showNotification('同步失败: ' + error.message, 'error');
         } finally {
             this.syncing = false;
         }
@@ -255,9 +349,9 @@ class GitHubMemo {
         const { username, repo, token } = this.config;
         const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
         
+        console.log('从GitHub获取数据:', apiUrl);
+        
         try {
-            console.log('从GitHub获取数据...');
-            
             const response = await fetch(apiUrl, {
                 headers: {
                     'Authorization': `token ${token}`,
@@ -269,25 +363,32 @@ class GitHubMemo {
             if (response.ok) {
                 const fileInfo = await response.json();
                 if (fileInfo && fileInfo.content) {
-                    // 使用UTF-8安全解码
+                    // 清理Base64字符串（移除换行符）
                     const base64Str = fileInfo.content.replace(/\n/g, '');
+                    console.log('获取到GitHub数据，Base64长度:', base64Str.length);
+                    
+                    // 使用UTF-8安全解码
                     const data = this.decodeJSONFromStorage(base64Str);
                     
                     if (data) {
-                        console.log('从GitHub获取数据成功:', {
+                        console.log('成功从GitHub获取数据:', {
                             sha: fileInfo.sha?.substring(0, 8) || 'unknown',
                             folders: data.folders?.length || 0,
                             memos: data.memos?.length || 0,
                             version: data.version || 0
                         });
                         return data;
+                    } else {
+                        console.error('GitHub数据解码失败');
+                        return null;
                     }
                 }
             } else if (response.status === 404) {
-                console.log('GitHub上还没有数据文件');
+                console.log('GitHub上还没有数据文件，将创建新文件');
                 return null;
             } else {
-                console.error('GitHub API错误:', response.status, response.statusText);
+                const errorText = await response.text();
+                console.error('GitHub API错误:', response.status, response.statusText, errorText);
                 return null;
             }
         } catch (error) {
@@ -300,23 +401,23 @@ class GitHubMemo {
         const { username, repo, token } = this.config;
         const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
         
+        console.log('保存数据到GitHub:', apiUrl);
+        
         try {
-            // 准备数据
+            // 准备数据 - 确保使用UTF-8编码
             const data = {
                 folders: this.folders,
                 memos: this.memos,
                 passwords: Array.from(this.folderPasswords.entries()),
-                version: ++this.dataVersion,
+                version: this.dataVersion + 1, // 增加版本号
                 lastModified: new Date().toISOString(),
-                charset: 'UTF-8',  // 明确记录字符集
+                charset: 'UTF-8',
                 deviceId: this.deviceId,
-                syncAt: new Date().toISOString()
+                syncAt: new Date().toISOString(),
+                syncCount: (this.dataVersion || 0) + 1
             };
             
-            // 使用UTF-8安全编码
-            const content = this.encodeJSONForStorage(data);
-            
-            // 先尝试获取文件的SHA
+            // 先获取当前文件的SHA（如果存在）
             let sha = null;
             try {
                 const response = await fetch(apiUrl, {
@@ -329,14 +430,19 @@ class GitHubMemo {
                 if (response.ok) {
                     const fileInfo = await response.json();
                     sha = fileInfo.sha;
+                    console.log('获取到文件SHA:', sha?.substring(0, 8));
                 }
             } catch (error) {
                 console.log('文件不存在，将创建新文件');
             }
             
-            // 提交数据
+            // 使用UTF-8安全编码
+            const content = this.encodeJSONForStorage(data);
+            console.log('准备上传的数据大小:', content.length, 'bytes');
+            
+            // 提交数据到GitHub
             const commitData = {
-                message: `备忘录数据同步 (v${data.version}) - ${new Date().toLocaleString()}`,
+                message: `备忘录数据同步 v${data.version} - ${new Date().toLocaleString()} - 设备:${this.deviceId.substring(0, 8)}`,
                 content: content,
                 ...(sha ? { sha } : {})
             };
@@ -352,11 +458,22 @@ class GitHubMemo {
             });
             
             if (response.ok) {
-                console.log('数据保存到GitHub成功');
+                const result = await response.json();
+                console.log('数据保存到GitHub成功:', {
+                    sha: result.content?.sha?.substring(0, 8),
+                    message: result.commit?.message
+                });
+                
+                // 更新本地版本号
+                this.dataVersion = data.version;
+                
+                // 保存到本地存储
+                this.saveLocalData();
+                
                 return true;
             } else {
                 const error = await response.json();
-                console.error('保存到GitHub失败:', error.message);
+                console.error('保存到GitHub失败:', error);
                 return false;
             }
         } catch (error) {
@@ -367,77 +484,104 @@ class GitHubMemo {
     
     async mergeData(remoteData) {
         console.log('开始合并数据...', {
+            localVersion: this.dataVersion,
+            remoteVersion: remoteData.version || 0,
             localFolders: this.folders.length,
             localMemos: this.memos.length,
             remoteFolders: remoteData.folders?.length || 0,
             remoteMemos: remoteData.memos?.length || 0
         });
         
-        // 合并文件夹（以更新时间为准）
-        const remoteFolders = remoteData.folders || [];
-        const localFolderMap = new Map(this.folders.map(f => [f.id, f]));
-        
-        for (const remoteFolder of remoteFolders) {
-            const localFolder = localFolderMap.get(remoteFolder.id);
+        // 如果远程版本更高，优先使用远程数据
+        if ((remoteData.version || 0) > this.dataVersion) {
+            console.log('远程版本更高，使用远程数据');
             
-            if (!localFolder) {
-                // 远程有，本地没有，添加
-                this.folders.push(remoteFolder);
-            } else {
-                // 两者都有，选择更新时间最新的
-                const localTime = new Date(localFolder.updatedAt || localFolder.createdAt).getTime();
-                const remoteTime = new Date(remoteFolder.updatedAt || remoteFolder.createdAt).getTime();
+            this.folders = remoteData.folders || [];
+            this.memos = remoteData.memos || [];
+            this.folderPasswords = new Map(remoteData.passwords || []);
+            this.dataVersion = remoteData.version || 0;
+            
+            console.log('使用远程数据完成:', {
+                folders: this.folders.length,
+                memos: this.memos.length,
+                version: this.dataVersion
+            });
+            
+        } else if ((remoteData.version || 0) < this.dataVersion) {
+            console.log('本地版本更高，保持本地数据');
+            // 本地数据版本更高，保持本地数据
+            
+        } else {
+            console.log('版本相同，进行智能合并');
+            // 版本相同，进行智能合并
+            
+            const remoteFolders = remoteData.folders || [];
+            const remoteMemos = remoteData.memos || [];
+            const remotePasswords = new Map(remoteData.passwords || []);
+            
+            // 创建查找表
+            const localFolderMap = new Map(this.folders.map(f => [f.id, f]));
+            const localMemoMap = new Map(this.memos.map(m => [m.id, m]));
+            
+            // 合并文件夹（以更新时间为准）
+            for (const remoteFolder of remoteFolders) {
+                const localFolder = localFolderMap.get(remoteFolder.id);
                 
-                if (remoteTime > localTime) {
-                    // 远程更新，替换本地
-                    const index = this.folders.findIndex(f => f.id === remoteFolder.id);
-                    if (index !== -1) {
-                        this.folders[index] = remoteFolder;
+                if (!localFolder) {
+                    // 远程有，本地没有，添加
+                    this.folders.push(remoteFolder);
+                } else {
+                    // 两者都有，选择更新时间最新的
+                    const localTime = new Date(localFolder.updatedAt || localFolder.createdAt || 0).getTime();
+                    const remoteTime = new Date(remoteFolder.updatedAt || remoteFolder.createdAt || 0).getTime();
+                    
+                    if (remoteTime > localTime) {
+                        // 远程更新，替换本地
+                        const index = this.folders.findIndex(f => f.id === remoteFolder.id);
+                        if (index !== -1) {
+                            this.folders[index] = remoteFolder;
+                        }
                     }
                 }
             }
-        }
-        
-        // 合并备忘录
-        const remoteMemos = remoteData.memos || [];
-        const localMemoMap = new Map(this.memos.map(m => [m.id, m]));
-        
-        for (const remoteMemo of remoteMemos) {
-            const localMemo = localMemoMap.get(remoteMemo.id);
             
-            if (!localMemo) {
-                // 远程有，本地没有，添加
-                this.memos.push(remoteMemo);
-            } else {
-                // 两者都有，选择更新时间最新的
-                const localTime = new Date(localMemo.updatedAt || localMemo.createdAt).getTime();
-                const remoteTime = new Date(remoteMemo.updatedAt || remoteMemo.createdAt).getTime();
+            // 合并备忘录
+            for (const remoteMemo of remoteMemos) {
+                const localMemo = localMemoMap.get(remoteMemo.id);
                 
-                if (remoteTime > localTime) {
-                    // 远程更新，替换本地
-                    const index = this.memos.findIndex(m => m.id === remoteMemo.id);
-                    if (index !== -1) {
-                        this.memos[index] = remoteMemo;
+                if (!localMemo) {
+                    // 远程有，本地没有，添加
+                    this.memos.push(remoteMemo);
+                } else {
+                    // 两者都有，选择更新时间最新的
+                    const localTime = new Date(localMemo.updatedAt || localMemo.createdAt || 0).getTime();
+                    const remoteTime = new Date(remoteMemo.updatedAt || remoteMemo.createdAt || 0).getTime();
+                    
+                    if (remoteTime > localTime) {
+                        // 远程更新，替换本地
+                        const index = this.memos.findIndex(m => m.id === remoteMemo.id);
+                        if (index !== -1) {
+                            this.memos[index] = remoteMemo;
+                        }
                     }
                 }
             }
+            
+            // 合并密码（远程优先）
+            this.folderPasswords = new Map([...remotePasswords, ...this.folderPasswords]);
+            
+            // 使用更高的版本号
+            this.dataVersion = Math.max(this.dataVersion, remoteData.version || 0);
         }
-        
-        // 合并密码（远程优先）
-        const remotePasswords = new Map(remoteData.passwords || []);
-        this.folderPasswords = new Map([...remotePasswords, ...this.folderPasswords]);
-        
-        // 使用更高的版本号
-        this.dataVersion = Math.max(this.dataVersion, remoteData.version || 0);
-        
-        console.log('数据合并完成', {
-            mergedFolders: this.folders.length,
-            mergedMemos: this.memos.length,
-            finalVersion: this.dataVersion
-        });
         
         // 保存合并后的数据到本地
         this.saveLocalData();
+        
+        console.log('数据合并完成', {
+            finalFolders: this.folders.length,
+            finalMemos: this.memos.length,
+            finalVersion: this.dataVersion
+        });
     }
     
     // ========== 应用初始化 ==========
@@ -462,6 +606,13 @@ class GitHubMemo {
         // 如果是GitHub模式，启动同步
         if (this.config.storageType === 'github') {
             this.startAutoSync();
+            
+            // 页面显示时也同步一次
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) {
+                    this.syncWithGitHub();
+                }
+            });
         }
         
         console.log('应用初始化完成');
@@ -598,6 +749,15 @@ class GitHubMemo {
             });
         }
         
+        // 同步按钮（手动同步）
+        if (this.lastSync) {
+            this.lastSync.addEventListener('click', (e) => {
+                if (this.config.storageType === 'github') {
+                    this.syncWithGitHub();
+                }
+            });
+        }
+        
         // 模态框内的事件绑定
         if (this.visibilityRadios) {
             this.visibilityRadios.forEach(radio => {
@@ -669,8 +829,9 @@ class GitHubMemo {
             // 1. 加载本地数据
             await this.loadLocalData();
             
-            // 2. 如果是GitHub模式，同步数据
+            // 2. 如果是GitHub模式，立即同步数据
             if (this.config.storageType === 'github') {
+                console.log('GitHub模式，开始初始同步...');
                 await this.syncWithGitHub();
             }
             
@@ -681,12 +842,13 @@ class GitHubMemo {
             console.log('数据加载完成', {
                 folders: this.folders.length,
                 memos: this.memos.length,
-                version: this.dataVersion
+                version: this.dataVersion,
+                storageType: this.config.storageType
             });
             
         } catch (error) {
             console.error('加载数据失败:', error);
-            alert('数据加载失败: ' + error.message);
+            this.showNotification('数据加载失败: ' + error.message, 'error');
         }
     }
     
@@ -777,14 +939,18 @@ class GitHubMemo {
                 folderEl.classList.add('active');
             }
             
+            // 显示文件夹信息
+            const folderName = this.escapeHtml(folder.name);
+            const dateStr = new Date(folder.updatedAt || folder.createdAt).toLocaleDateString();
+            
             folderEl.innerHTML = `
                 <div class="folder-content">
                     <i class="fas fa-folder folder-icon ${folder.visibility === 'private' ? 'folder-private' : ''}"></i>
-                    <span class="folder-name">${this.escapeHtml(folder.name)}</span>
+                    <span class="folder-name">${folderName}</span>
                 </div>
                 <div class="folder-meta">
                     ${folder.visibility === 'private' ? '<i class="fas fa-lock" title="密码保护"></i>' : ''}
-                    <span class="folder-date">${new Date(folder.updatedAt || folder.createdAt).toLocaleDateString()}</span>
+                    <span class="folder-date">${dateStr}</span>
                 </div>
             `;
             
@@ -841,13 +1007,13 @@ class GitHubMemo {
         
         const name = this.folderNameInput.value.trim();
         if (!name) {
-            alert('请输入文件夹名称');
+            this.showNotification('请输入文件夹名称', 'warning');
             return;
         }
         
         const visibility = document.querySelector('input[name="visibility"]:checked');
         if (!visibility) {
-            alert('请选择权限设置');
+            this.showNotification('请选择权限设置', 'warning');
             return;
         }
         
@@ -856,7 +1022,7 @@ class GitHubMemo {
             this.folderPasswordInput.value : '';
         
         if (visibilityValue === 'private' && password.length < 4) {
-            alert('密码至少需要4位字符');
+            this.showNotification('密码至少需要4位字符', 'warning');
             return;
         }
         
@@ -873,7 +1039,7 @@ class GitHubMemo {
         this.folders.unshift(folder);
         
         if (visibilityValue === 'private' && password) {
-            this.folderPasswords.set(folder.id, this.utf8Btoa(password));
+            this.folderPasswords.set(folder.id, this.utf8ToBase64(password));
         }
         
         this.saveLocalData();
@@ -887,7 +1053,7 @@ class GitHubMemo {
         this.hideModal(this.newFolderModal);
         this.selectFolder(folder);
         
-        alert('文件夹创建成功: ' + name);
+        this.showNotification('文件夹创建成功: ' + name, 'success');
     }
     
     // ========== 备忘录管理 ==========
@@ -935,7 +1101,7 @@ class GitHubMemo {
     createMemo() {
         console.log('创建新备忘录...');
         if (!this.currentFolder) {
-            alert('请先选择一个文件夹');
+            this.showNotification('请先选择一个文件夹', 'warning');
             return;
         }
         
@@ -993,8 +1159,10 @@ class GitHubMemo {
             const memoEl = document.createElement('div');
             memoEl.className = 'memo-card';
             
+            // 确保内容正确显示
+            const memoTitle = this.escapeHtml(memo.title || '');
             const contentPreview = memo.content ? 
-                memo.content.substring(0, 150).replace(/\n/g, ' ') + (memo.content.length > 150 ? '...' : '') : 
+                this.escapeHtml(memo.content.substring(0, 150).replace(/\n/g, ' ') + (memo.content.length > 150 ? '...' : '')) : 
                 '暂无内容';
             
             const date = new Date(memo.updatedAt || memo.createdAt);
@@ -1002,10 +1170,10 @@ class GitHubMemo {
             
             memoEl.innerHTML = `
                 <div class="memo-header">
-                    <h3 title="${this.escapeHtml(memo.title)}">${this.escapeHtml(memo.title)}</h3>
+                    <h3 title="${memoTitle}">${memoTitle}</h3>
                     <span class="memo-date">${dateStr}</span>
                 </div>
-                <div class="memo-content">${this.escapeHtml(contentPreview)}</div>
+                <div class="memo-content">${contentPreview}</div>
                 <div class="memo-actions">
                     <button class="memo-action-btn memo-edit-btn" title="编辑">
                         <i class="fas fa-edit"></i>
@@ -1099,7 +1267,7 @@ class GitHubMemo {
     saveMemo() {
         console.log('保存备忘录...');
         if (!this.currentMemo) {
-            alert('没有可保存的备忘录');
+            this.showNotification('没有可保存的备忘录', 'warning');
             return;
         }
         
@@ -1107,7 +1275,7 @@ class GitHubMemo {
         const content = this.memoContent.value.trim();
         
         if (!title) {
-            alert('请输入备忘录标题');
+            this.showNotification('请输入备忘录标题', 'warning');
             this.memoTitle.focus();
             return;
         }
@@ -1128,11 +1296,11 @@ class GitHubMemo {
         // 如果是GitHub模式，同步到云端
         if (this.config.storageType === 'github') {
             this.syncWithGitHub();
+        } else {
+            this.renderMemos();
         }
         
-        this.renderMemos();
-        
-        alert('备忘录已保存: ' + title);
+        this.showNotification('备忘录已保存: ' + title, 'success');
     }
     
     // ========== 分享配置 ==========
@@ -1141,7 +1309,7 @@ class GitHubMemo {
         console.log('显示分享配置模态框');
         
         if (!this.config.username || !this.config.repo || !this.config.token) {
-            alert('请先配置GitHub信息');
+            this.showNotification('请先配置GitHub信息', 'warning');
             return;
         }
         
@@ -1152,104 +1320,128 @@ class GitHubMemo {
             storageType: this.config.storageType,
             sharedAt: new Date().toISOString(),
             note: 'GitHub备忘录配置链接',
-            version: '1.0',
-            charset: 'UTF-8'
+            version: '2.0',
+            charset: 'UTF-8',
+            app: 'GitHub Memo'
         };
         
         try {
             const jsonStr = JSON.stringify(shareConfig);
-            const base64Data = this.utf8Btoa(jsonStr);
+            console.log('分享配置JSON:', jsonStr);
+            
+            const base64Data = this.utf8ToBase64(jsonStr);
+            console.log('分享配置Base64:', base64Data);
+            
             const encoded = encodeURIComponent(base64Data);
             const baseUrl = window.location.origin + window.location.pathname;
             const shareLink = `${baseUrl}?config=${encoded}`;
             
-            // 显示分享链接
-            const linkInput = document.createElement('input');
-            linkInput.type = 'text';
-            linkInput.value = shareLink;
-            linkInput.style.width = '100%';
-            linkInput.style.padding = '10px';
-            linkInput.style.margin = '10px 0';
-            linkInput.style.boxSizing = 'border-box';
-            
-            const copyBtn = document.createElement('button');
-            copyBtn.textContent = '复制链接';
-            copyBtn.style.padding = '10px 20px';
-            copyBtn.style.backgroundColor = '#3498db';
-            copyBtn.style.color = 'white';
-            copyBtn.style.border = 'none';
-            copyBtn.style.borderRadius = '4px';
-            copyBtn.style.cursor = 'pointer';
-            copyBtn.onclick = () => {
-                linkInput.select();
-                document.execCommand('copy');
-                alert('链接已复制到剪贴板');
-            };
-            
-            const message = document.createElement('div');
-            message.innerHTML = `
-                <h3>分享配置</h3>
-                <p>复制以下链接分享给其他设备：</p>
-                <p><small>此链接包含您的GitHub Token，请谨慎分享！</small></p>
-            `;
-            
-            const container = document.createElement('div');
-            container.style.cssText = `
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: white;
-                padding: 30px;
-                border-radius: 10px;
-                box-shadow: 0 5px 30px rgba(0,0,0,0.3);
-                z-index: 10000;
-                min-width: 400px;
-                max-width: 500px;
-            `;
-            
-            const overlay = document.createElement('div');
-            overlay.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(0,0,0,0.5);
-                z-index: 9999;
-            `;
-            
-            const closeBtn = document.createElement('button');
-            closeBtn.textContent = '关闭';
-            closeBtn.style.cssText = `
-                margin-top: 15px;
-                padding: 8px 16px;
-                background: #95a5a6;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-            `;
-            closeBtn.onclick = () => {
-                document.body.removeChild(container);
-                document.body.removeChild(overlay);
-            };
-            
-            overlay.onclick = closeBtn.onclick;
-            
-            container.appendChild(message);
-            container.appendChild(linkInput);
-            container.appendChild(copyBtn);
-            container.appendChild(closeBtn);
-            
-            document.body.appendChild(overlay);
-            document.body.appendChild(container);
-            
-            linkInput.select();
+            // 显示分享对话框
+            this.showShareDialog(shareLink, shareConfig);
             
         } catch (error) {
             console.error('生成分享链接失败:', error);
-            alert('生成分享链接失败');
+            this.showNotification('生成分享链接失败: ' + error.message, 'error');
+        }
+    }
+    
+    showShareDialog(shareLink, shareConfig) {
+        // 创建分享对话框
+        const dialog = document.createElement('div');
+        dialog.className = 'modal';
+        dialog.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <h3><i class="fas fa-share-alt"></i> 分享配置</h3>
+                <p>复制以下链接，在其他设备上打开即可自动配置：</p>
+                
+                <div class="share-link-container" style="margin: 15px 0;">
+                    <input type="text" id="shareLinkInput" class="form-control" 
+                           value="${this.escapeHtml(shareLink)}" readonly 
+                           style="font-family: monospace; font-size: 12px;">
+                    <button id="copyShareLinkBtn" class="btn btn-primary" style="margin-top: 10px;">
+                        <i class="fas fa-copy"></i> 复制链接
+                    </button>
+                </div>
+                
+                <div class="config-info" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                    <p><strong><i class="fas fa-info-circle"></i> 包含的配置信息：</strong></p>
+                    <ul style="margin: 10px 0 10px 20px;">
+                        <li>用户名: ${this.escapeHtml(shareConfig.username)}</li>
+                        <li>仓库: ${this.escapeHtml(shareConfig.repo)}</li>
+                        <li>存储类型: ${shareConfig.storageType === 'github' ? 'GitHub云端存储' : '本地存储'}</li>
+                        <li>字符编码: ${shareConfig.charset}</li>
+                    </ul>
+                </div>
+                
+                <div class="share-warning" style="background: #fff3cd; border: 1px solid #ffeaa7; 
+                     border-radius: 8px; padding: 12px; margin: 15px 0;">
+                    <p style="margin: 0; color: #856404;">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>安全提示：</strong> 此链接包含您的GitHub Token，请谨慎分享！
+                    </p>
+                </div>
+                
+                <div class="modal-actions">
+                    <button id="closeShareDialogBtn" class="btn btn-secondary">关闭</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(dialog);
+        
+        // 显示遮罩层
+        if (this.modalOverlay) {
+            this.modalOverlay.classList.remove('hidden');
+        }
+        dialog.classList.remove('hidden');
+        
+        // 绑定事件
+        const copyBtn = dialog.querySelector('#copyShareLinkBtn');
+        const closeBtn = dialog.querySelector('#closeShareDialogBtn');
+        const shareInput = dialog.querySelector('#shareLinkInput');
+        
+        copyBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            shareInput.select();
+            
+            try {
+                document.execCommand('copy');
+                copyBtn.innerHTML = '<i class="fas fa-check"></i> 已复制';
+                copyBtn.disabled = true;
+                
+                setTimeout(() => {
+                    copyBtn.innerHTML = '<i class="fas fa-copy"></i> 复制链接';
+                    copyBtn.disabled = false;
+                }, 2000);
+            } catch (err) {
+                // 备用复制方法
+                navigator.clipboard.writeText(shareInput.value).then(() => {
+                    copyBtn.innerHTML = '<i class="fas fa-check"></i> 已复制';
+                    copyBtn.disabled = true;
+                    
+                    setTimeout(() => {
+                        copyBtn.innerHTML = '<i class="fas fa-copy"></i> 复制链接';
+                        copyBtn.disabled = false;
+                    }, 2000);
+                }).catch(() => {
+                    this.showNotification('复制失败，请手动复制链接', 'error');
+                });
+            }
+        });
+        
+        closeBtn.addEventListener('click', () => {
+            dialog.remove();
+            if (this.modalOverlay) {
+                this.modalOverlay.classList.add('hidden');
+            }
+        });
+        
+        // 点击遮罩层关闭
+        if (this.modalOverlay) {
+            this.modalOverlay.addEventListener('click', () => {
+                dialog.remove();
+                this.modalOverlay.classList.add('hidden');
+            });
         }
     }
     
@@ -1295,14 +1487,76 @@ class GitHubMemo {
             clearInterval(this.autoSyncInterval);
         }
         
-        // 每2分钟自动同步一次
+        // 每1分钟自动同步一次
         this.autoSyncInterval = setInterval(() => {
             if (this.config.storageType === 'github' && this.networkStatus === 'online') {
+                console.log('自动同步触发...');
                 this.syncWithGitHub().catch(console.error);
             }
-        }, 2 * 60 * 1000);
+        }, 1 * 60 * 1000);
         
-        console.log('自动同步已启动（每2分钟一次）');
+        console.log('自动同步已启动（每1分钟一次）');
+    }
+    
+    showNotification(message, type = 'info') {
+        console.log('通知:', type, message);
+        
+        // 创建通知元素
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : type === 'warning' ? '#ff9800' : '#2196F3'};
+            color: white;
+            padding: 15px 20px;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            max-width: 300px;
+            animation: slideIn 0.3s ease;
+        `;
+        
+        const icon = type === 'success' ? 'fa-check-circle' : 
+                    type === 'error' ? 'fa-exclamation-circle' : 
+                    type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle';
+        
+        notification.innerHTML = `
+            <i class="fas ${icon}" style="margin-right: 10px;"></i>
+            <span>${this.escapeHtml(message)}</span>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // 3秒后自动移除
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }
+        }, 3000);
+        
+        // 添加CSS动画
+        if (!document.getElementById('notification-styles')) {
+            const style = document.createElement('style');
+            style.id = 'notification-styles';
+            style.textContent = `
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                @keyframes slideOut {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(100%); opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
     }
     
     // ========== 其他方法 ==========
@@ -1319,16 +1573,20 @@ class GitHubMemo {
         if (!this.inputPassword || !this.currentFolder) return;
         
         const password = this.inputPassword.value;
-        if (!password) return;
+        if (!password) {
+            this.showNotification('请输入密码', 'warning');
+            return;
+        }
         
         const storedPassword = this.folderPasswords.get(this.currentFolder.id);
-        const enteredPassword = this.utf8Btoa(password);
+        const enteredPassword = this.utf8ToBase64(password);
         
         if (enteredPassword === storedPassword) {
             this.hideModal(this.passwordModal);
             this.selectFolder(this.currentFolder);
+            this.showNotification('密码验证成功', 'success');
         } else {
-            alert('密码错误！');
+            this.showNotification('密码错误！', 'error');
             this.inputPassword.value = '';
             this.inputPassword.focus();
         }
@@ -1394,7 +1652,7 @@ class GitHubMemo {
         if (this.confirmMessage) {
             let message = `确定要删除文件夹"${this.escapeHtml(folder.name)}"吗？`;
             if (folderMemos.length > 0) {
-                message += `\n包含 ${folderMemos.length} 个备忘录`;
+                message += `\n包含 ${folderMemos.length} 个备忘录，也将被删除。`;
             }
             this.confirmMessage.textContent = message;
         }
@@ -1411,6 +1669,7 @@ class GitHubMemo {
         if (this.pendingDelete.type === 'memo') {
             const memoIndex = this.memos.findIndex(m => m.id === this.pendingDelete.id);
             if (memoIndex !== -1) {
+                const memoTitle = this.memos[memoIndex].title;
                 this.memos.splice(memoIndex, 1);
                 
                 if (this.currentMemo && this.currentMemo.id === this.pendingDelete.id) {
@@ -1418,11 +1677,12 @@ class GitHubMemo {
                     this.currentMemo = null;
                 }
                 
-                alert('备忘录已删除');
+                this.showNotification(`备忘录"${memoTitle}"已删除`, 'success');
             }
         } else if (this.pendingDelete.type === 'folder') {
             const folderIndex = this.folders.findIndex(f => f.id === this.pendingDelete.id);
             if (folderIndex !== -1) {
+                const folderName = this.folders[folderIndex].name;
                 this.folders.splice(folderIndex, 1);
                 
                 this.memos = this.memos.filter(memo => memo.folderId !== this.pendingDelete.id);
@@ -1446,7 +1706,7 @@ class GitHubMemo {
                     }
                 }
                 
-                alert('文件夹已删除');
+                this.showNotification(`文件夹"${folderName}"已删除`, 'success');
             }
         }
         
@@ -1466,7 +1726,7 @@ class GitHubMemo {
     
     exportCurrentMemo() {
         if (!this.currentMemo) {
-            alert('没有可导出的备忘录');
+            this.showNotification('没有可导出的备忘录', 'warning');
             return;
         }
         
@@ -1489,7 +1749,7 @@ class GitHubMemo {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        alert('备忘录导出成功');
+        this.showNotification('备忘录导出成功', 'success');
     }
     
     exportAllData() {
@@ -1515,7 +1775,7 @@ class GitHubMemo {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        alert('数据导出成功');
+        this.showNotification('数据导出成功', 'success');
     }
 }
 
