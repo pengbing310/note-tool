@@ -241,7 +241,7 @@ class GitHubMemo {
         }
     }
     
-    // ========== 修复的同步逻辑 ==========
+    // ========== 修复的双向同步逻辑 ==========
     
     async fetchFromGitHub() {
         const { username, repo, token } = this.config;
@@ -269,7 +269,8 @@ class GitHubMemo {
                         console.log('从GitHub获取数据成功', {
                             version: data.version || 0,
                             folders: data.folders?.length || 0,
-                            memos: data.memos?.length || 0
+                            memos: data.memos?.length || 0,
+                            lastModified: data.lastModified
                         });
                         
                         return data;
@@ -321,11 +322,7 @@ class GitHubMemo {
                 console.log('文件不存在，将创建新文件');
             }
             
-            if (currentData && currentData.version) {
-                console.log('发现远程数据，先合并');
-                await this.smartMergeData(currentData, {});
-            }
-            
+            // 准备要保存的数据
             const data = {
                 folders: this.folders,
                 memos: this.memos,
@@ -338,8 +335,10 @@ class GitHubMemo {
                 syncCount: (this.dataVersion || 0) + 1
             };
             
+            // 使用UTF-8安全编码
             const content = this.encodeJSONForStorage(data);
             
+            // 提交数据到GitHub
             const commitData = {
                 message: `备忘录数据同步 v${data.version} - ${new Date().toLocaleString()} - 设备:${this.deviceId.substring(0, 8)}`,
                 content: content,
@@ -365,7 +364,10 @@ class GitHubMemo {
                     newVersion: data.version
                 });
                 
+                // 更新本地版本号
                 this.dataVersion = data.version;
+                
+                // 保存到本地存储
                 this.saveLocalData();
                 
                 return true;
@@ -394,99 +396,109 @@ class GitHubMemo {
         const remoteMemos = remoteData.memos || [];
         const remotePasswords = new Map(remoteData.passwords || []);
         
-        const localFolderMap = new Map(this.folders.map(f => [f.id, f]));
-        const localMemoMap = new Map(this.memos.map(m => [m.id, m]));
+        // 使用Map来避免重复项
+        const folderMap = new Map();
+        const memoMap = new Map();
         
-        const remoteFolderMap = new Map(remoteFolders.map(f => [f.id, f]));
-        const remoteMemoMap = new Map(remoteMemos.map(m => [m.id, m]));
-        
-        const mergedFolders = new Map();
-        
+        // 首先添加所有本地文件夹
         for (const folder of this.folders) {
-            mergedFolders.set(folder.id, folder);
+            folderMap.set(folder.id, folder);
         }
         
+        // 然后添加远程文件夹（覆盖或新增）
         for (const remoteFolder of remoteFolders) {
-            const localFolder = mergedFolders.get(remoteFolder.id);
+            const localFolder = folderMap.get(remoteFolder.id);
             
             if (!localFolder) {
-                mergedFolders.set(remoteFolder.id, remoteFolder);
+                // 远程有，本地没有 - 添加远程文件夹
+                folderMap.set(remoteFolder.id, remoteFolder);
                 console.log('添加远程文件夹:', remoteFolder.name);
             } else {
+                // 两边都有 - 选择更新时间最新的
                 const localTime = new Date(localFolder.updatedAt || localFolder.createdAt || 0).getTime();
                 const remoteTime = new Date(remoteFolder.updatedAt || remoteFolder.createdAt || 0).getTime();
                 
                 if (remoteTime > localTime) {
-                    mergedFolders.set(remoteFolder.id, remoteFolder);
+                    folderMap.set(remoteFolder.id, remoteFolder);
                     console.log('更新文件夹（远程较新）:', remoteFolder.name);
                 }
             }
         }
         
+        // 处理删除：如果本地有删除标记，移除对应的文件夹
         if (pendingDeletes.type === 'folder' && pendingDeletes.id) {
-            mergedFolders.delete(pendingDeletes.id);
+            folderMap.delete(pendingDeletes.id);
             console.log('移除被删除的文件夹:', pendingDeletes.id);
         }
         
-        const mergedMemos = new Map();
-        
+        // 添加所有本地备忘录（只添加文件夹存在的备忘录）
         for (const memo of this.memos) {
-            if (mergedFolders.has(memo.folderId)) {
-                mergedMemos.set(memo.id, memo);
+            if (folderMap.has(memo.folderId)) {
+                memoMap.set(memo.id, memo);
             }
         }
         
+        // 添加远程备忘录（覆盖或新增）
         for (const remoteMemo of remoteMemos) {
-            if (!mergedFolders.has(remoteMemo.folderId)) {
+            // 只添加文件夹存在的备忘录
+            if (!folderMap.has(remoteMemo.folderId)) {
                 console.log('跳过不存在的文件夹中的备忘录:', remoteMemo.title);
                 continue;
             }
             
-            const localMemo = mergedMemos.get(remoteMemo.id);
+            const localMemo = memoMap.get(remoteMemo.id);
             
             if (!localMemo) {
-                mergedMemos.set(remoteMemo.id, remoteMemo);
+                // 远程有，本地没有 - 添加远程备忘录
+                memoMap.set(remoteMemo.id, remoteMemo);
                 console.log('添加远程备忘录:', remoteMemo.title);
             } else {
+                // 两边都有 - 选择更新时间最新的
                 const localTime = new Date(localMemo.updatedAt || localMemo.createdAt || 0).getTime();
                 const remoteTime = new Date(remoteMemo.updatedAt || remoteMemo.createdAt || 0).getTime();
                 
                 if (remoteTime > localTime) {
-                    mergedMemos.set(remoteMemo.id, remoteMemo);
+                    memoMap.set(remoteMemo.id, remoteMemo);
                     console.log('更新备忘录（远程较新）:', remoteMemo.title);
                 }
             }
         }
         
+        // 处理删除：如果本地有删除标记，移除对应的备忘录
         if (pendingDeletes.type === 'memo' && pendingDeletes.id) {
-            mergedMemos.delete(pendingDeletes.id);
+            memoMap.delete(pendingDeletes.id);
             console.log('移除被删除的备忘录:', pendingDeletes.id);
         }
         
-        const mergedPasswords = new Map();
+        // 合并密码
+        const passwordMap = new Map();
         
+        // 添加所有本地密码（文件夹必须存在）
         for (const [folderId, password] of this.folderPasswords) {
-            if (mergedFolders.has(folderId)) {
-                mergedPasswords.set(folderId, password);
+            if (folderMap.has(folderId)) {
+                passwordMap.set(folderId, password);
             }
         }
         
+        // 添加远程密码（覆盖本地）
         for (const [folderId, password] of remotePasswords) {
-            if (mergedFolders.has(folderId)) {
-                mergedPasswords.set(folderId, password);
+            if (folderMap.has(folderId)) {
+                passwordMap.set(folderId, password);
             }
         }
         
-        this.folders = Array.from(mergedFolders.values()).sort((a, b) => 
+        // 更新数据
+        this.folders = Array.from(folderMap.values()).sort((a, b) => 
             new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)
         );
         
-        this.memos = Array.from(mergedMemos.values()).sort((a, b) => 
+        this.memos = Array.from(memoMap.values()).sort((a, b) => 
             new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)
         );
         
-        this.folderPasswords = mergedPasswords;
+        this.folderPasswords = passwordMap;
         
+        // 更新版本号 - 使用更高的版本
         this.dataVersion = Math.max(this.dataVersion, remoteData.version || 0) + 1;
         
         console.log('智能数据合并完成', {
@@ -495,7 +507,10 @@ class GitHubMemo {
             finalVersion: this.dataVersion
         });
         
+        // 清除待处理的删除标记（已处理完成）
         this.pendingDelete = { type: null, id: null };
+        
+        // 立即保存到本地
         this.saveLocalData();
     }
     
@@ -519,9 +534,11 @@ class GitHubMemo {
         console.log('开始GitHub双向同步...');
         
         try {
+            // 保存当前的删除标记
             const pendingDeletes = { ...this.pendingDelete };
             console.log('当前待处理的删除操作:', pendingDeletes);
             
+            // 1. 从GitHub获取最新数据
             console.log('步骤1: 获取最新GitHub数据');
             let remoteData = null;
             try {
@@ -530,16 +547,19 @@ class GitHubMemo {
                 console.warn('获取远程数据失败，继续使用本地数据:', error);
             }
             
+            // 2. 如果有远程数据，先合并（重要：先合并远程数据到本地）
             if (remoteData) {
-                console.log('步骤2: 合并远程数据');
+                console.log('步骤2: 合并远程数据到本地');
                 await this.smartMergeData(remoteData, pendingDeletes);
             }
             
+            // 3. 上传合并后的数据到GitHub
             console.log('步骤3: 上传数据到GitHub');
             await this.saveToGitHub();
             
             console.log('GitHub双向同步成功完成');
             
+            // 更新UI
             this.renderFolders();
             if (this.currentFolder) {
                 this.renderMemos();
@@ -552,6 +572,7 @@ class GitHubMemo {
             console.error('GitHub同步失败:', error);
             this.showNotification('同步失败: ' + error.message, 'error');
             
+            // 如果同步失败，重试一次
             if (this.retryCount < this.maxRetries) {
                 this.retryCount++;
                 console.log(`同步失败，第${this.retryCount}次重试...`);
@@ -569,12 +590,13 @@ class GitHubMemo {
             clearInterval(this.autoSyncInterval);
         }
         
+        // 每30秒自动同步一次
         this.autoSyncInterval = setInterval(() => {
             if (this.config.storageType === 'github' && this.networkStatus === 'online' && !this.syncing) {
                 console.log('自动同步触发...');
                 this.syncWithGitHub().catch(console.error);
             }
-        }, 30 * 1000);
+        }, 30 * 1000); // 30秒
         
         console.log('自动同步已启动（每30秒一次）');
     }
@@ -613,13 +635,16 @@ class GitHubMemo {
         this.bindEvents();
         this.loadData();
         
+        // 监听网络状态
         window.addEventListener('online', () => {
             this.networkStatus = 'online';
             this.showNotification('网络已连接', 'success');
             
+            // 如果是GitHub模式，网络恢复时立即同步
             if (this.config.storageType === 'github') {
                 setTimeout(() => {
                     if (!this.syncing) {
+                        console.log('网络恢复，自动同步');
                         this.syncWithGitHub();
                     }
                 }, 2000);
@@ -631,9 +656,11 @@ class GitHubMemo {
             this.showNotification('网络已断开', 'warning');
         });
         
+        // 如果是GitHub模式，启动更频繁的同步
         if (this.config.storageType === 'github') {
             this.startAutoSync();
             
+            // 页面获取焦点时同步
             window.addEventListener('focus', () => {
                 if (this.networkStatus === 'online' && !this.syncing) {
                     setTimeout(() => this.syncWithGitHub(), 1000);
@@ -853,12 +880,16 @@ class GitHubMemo {
     async loadData() {
         console.log('加载数据...');
         try {
+            // 1. 加载本地数据
             await this.loadLocalData();
             
+            // 2. 如果是GitHub模式，立即同步
             if (this.config.storageType === 'github') {
                 console.log('GitHub模式，开始初始同步...');
                 
+                // 先检查网络
                 if (navigator.onLine) {
+                    // 延迟1秒开始同步，确保页面完全加载
                     setTimeout(() => {
                         this.syncWithGitHub();
                     }, 1000);
@@ -868,6 +899,7 @@ class GitHubMemo {
                 }
             }
             
+            // 3. 渲染UI
             this.renderFolders();
             this.updateLastSync();
             
@@ -1090,7 +1122,9 @@ class GitHubMemo {
         
         this.saveLocalData();
         
+        // 立即同步到GitHub
         if (this.config.storageType === 'github') {
+            console.log('立即同步新增文件夹');
             this.syncWithGitHub();
         }
         
@@ -1167,7 +1201,9 @@ class GitHubMemo {
         
         this.saveLocalData();
         
+        // 立即同步到GitHub
         if (this.config.storageType === 'github') {
+            console.log('立即同步新增备忘录');
             this.syncWithGitHub();
         }
         
@@ -1343,7 +1379,9 @@ class GitHubMemo {
         
         this.saveLocalData();
         
+        // 立即同步到GitHub
         if (this.config.storageType === 'github') {
+            console.log('立即同步保存备忘录');
             this.syncWithGitHub();
         } else {
             this.renderMemos();
