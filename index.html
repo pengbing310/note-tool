@@ -251,12 +251,46 @@
             const urlParams = new URLSearchParams(window.location.search);
             const hasConfigInUrl = urlParams.has('config');
             
-            // 修复的日志输出
             console.log('检查配置: 本地配置=' + (hasConfig ? '有' : '无') + ', URL配置=' + (hasConfigInUrl ? '有' : '无'));
             
             if (!hasConfig && !hasConfigInUrl) {
                 console.log('未找到配置，跳转到配置页面');
                 window.location.href = 'config.html';
+            }
+        });
+        
+        // 网络状态检测和自动重连
+        function updateOnlineStatus() {
+            const status = navigator.onLine ? 'online' : 'offline';
+            console.log('网络状态:', status);
+            
+            if (window.app) {
+                window.app.networkStatus = status;
+                
+                if (status === 'online') {
+                    setTimeout(() => {
+                        if (window.app && window.app.config.storageType === 'github' && !window.app.syncing) {
+                            console.log('网络恢复，开始同步...');
+                            window.app.syncWithGitHub();
+                        }
+                    }, 2000);
+                }
+            }
+        }
+        
+        // 初始化网络状态
+        updateOnlineStatus();
+        
+        // 监听网络状态变化
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+        
+        // 页面可见性变化时同步
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && navigator.onLine && window.app && 
+                window.app.config.storageType === 'github' && !window.app.syncing) {
+                console.log('页面重新显示，开始同步...');
+                setTimeout(() => window.app.syncWithGitHub(), 1000);
             }
         });
     </script>
