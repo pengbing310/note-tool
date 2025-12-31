@@ -138,21 +138,22 @@
 
         <!-- 底部状态栏 -->
         <footer class="status-bar">
-            <div class="status-info">
-                <span class="status-item">
-                    <i class="fas fa-database"></i>
-                    <span>存储模式: <span id="storageMode">本地</span></span>
-                </span>
-                <span class="status-item">
-                    <i class="fas fa-sync-alt"></i>
-                    <span>自动保存</span>
-                </span>
-                <span class="status-item">
-                    <i class="fas fa-clock"></i>
-                    <span>最后同步: <span id="lastSync">-</span></span>
-                </span>
-            </div>
-        </footer>
+    <div class="status-info">
+        <span class="status-item">
+            <i class="fas fa-database"></i>
+            <span>存储模式: <span id="storageMode">本地</span></span>
+        </span>
+        <span class="status-item">
+            <i class="fas fa-sync-alt"></i>
+            <span>最后同步: <span id="lastSync" style="cursor: pointer;" title="点击手动同步">-</span></span>
+        </span>
+        <span class="status-item">
+            <button id="forceSyncBtn" class="btn btn-sm" style="padding: 2px 8px; font-size: 12px;">
+                <i class="fas fa-redo"></i> 立即同步
+            </button>
+        </span>
+    </div>
+</footer>
     </div>
 
     <!-- 模态框 -->

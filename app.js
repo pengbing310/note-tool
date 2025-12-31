@@ -276,313 +276,486 @@ class GitHubMemo {
         }
     }
     
-    // ========== GitHub同步功能（完全修复）==========
+   // 在GitHubMemo类中添加/修改以下方法
+
+// ========== 修复删除同步问题 ==========
+
+async syncWithGitHub() {
+    if (this.config.storageType !== 'github') {
+        console.log('非GitHub存储模式，跳过同步');
+        return;
+    }
     
-    async syncWithGitHub() {
-        if (this.config.storageType !== 'github') {
-            console.log('非GitHub存储模式，跳过同步');
+    if (!this.config.username || !this.config.repo || !this.config.token) {
+        console.log('GitHub配置不完整，跳过同步');
+        return;
+    }
+    
+    if (this.syncing) {
+        console.log('正在同步中，跳过');
+        return;
+    }
+    
+    this.syncing = true;
+    console.log('开始GitHub同步...');
+    
+    try {
+        // 1. 保存当前的删除标记
+        const pendingDeletes = { ...this.pendingDelete };
+        
+        // 2. 首先上传本地数据到GitHub（确保删除操作先上传）
+        console.log('步骤1: 上传本地数据到GitHub（优先处理删除）');
+        const uploadSuccess = await this.saveToGitHub();
+        
+        if (!uploadSuccess) {
+            console.error('GitHub上传失败，跳过后续同步');
+            this.showNotification('数据上传失败', 'error');
             return;
         }
         
-        if (!this.config.username || !this.config.repo || !this.config.token) {
-            console.log('GitHub配置不完整，跳过同步');
-            return;
+        // 3. 从GitHub获取最新数据
+        console.log('步骤2: 从GitHub获取最新数据');
+        const remoteData = await this.fetchFromGitHub();
+        
+        // 4. 如果有远程数据，合并时保留本地的删除操作
+        if (remoteData) {
+            console.log('步骤3: 合并远程数据（保留本地删除）');
+            await this.mergeDataWithDeleteProtection(remoteData, pendingDeletes);
+        } else {
+            console.log('没有远程数据，跳过合并');
         }
         
-        if (this.syncing) {
-            console.log('正在同步中，跳过');
-            return;
-        }
+        // 5. 再次上传合并后的数据（确保最终一致性）
+        console.log('步骤4: 上传最终数据到GitHub');
+        const finalUploadSuccess = await this.saveToGitHub();
         
-        this.syncing = true;
-        console.log('开始GitHub同步...');
-        
-        try {
-            // 1. 首先从GitHub获取远程数据
-            console.log('步骤1: 从GitHub获取数据');
-            const remoteData = await this.fetchFromGitHub();
+        if (finalUploadSuccess) {
+            console.log('GitHub同步成功完成');
             
-            // 2. 如果有远程数据，与本地数据合并
-            if (remoteData) {
-                console.log('步骤2: 合并远程数据');
-                await this.mergeData(remoteData);
-            } else {
-                console.log('没有远程数据，跳过合并');
+            // 更新UI
+            this.renderFolders();
+            if (this.currentFolder) {
+                this.renderMemos();
             }
             
-            // 3. 上传本地数据到GitHub（强制上传，确保数据一致性）
-            console.log('步骤3: 上传数据到GitHub');
-            const uploadSuccess = await this.saveToGitHub();
+            this.updateLastSync();
+            this.showNotification('数据同步成功', 'success');
+        } else {
+            console.error('最终上传失败');
+            this.showNotification('数据同步失败', 'error');
+        }
+        
+    } catch (error) {
+        console.error('GitHub同步失败:', error);
+        this.showNotification('同步失败: ' + error.message, 'error');
+    } finally {
+        this.syncing = false;
+    }
+}
+
+// 新增：带删除保护的合并方法
+async mergeDataWithDeleteProtection(remoteData, pendingDeletes) {
+    console.log('开始带删除保护的数据合并...', {
+        localVersion: this.dataVersion,
+        remoteVersion: remoteData.version || 0,
+        pendingDeletes: pendingDeletes
+    });
+    
+    const remoteFolders = remoteData.folders || [];
+    const remoteMemos = remoteData.memos || [];
+    const remotePasswords = new Map(remoteData.passwords || []);
+    
+    // 创建查找表
+    const localFolderMap = new Map(this.folders.map(f => [f.id, f]));
+    const localMemoMap = new Map(this.memos.map(m => [m.id, m]));
+    
+    // 检查是否有待处理的删除操作
+    const hasPendingDelete = pendingDeletes.type && pendingDeletes.id;
+    
+    // 合并文件夹 - 优先保留本地的删除操作
+    const mergedFolders = [];
+    
+    // 首先添加所有本地文件夹
+    for (const localFolder of this.folders) {
+        mergedFolders.push(localFolder);
+    }
+    
+    // 然后添加远程文件夹（排除被删除的）
+    for (const remoteFolder of remoteFolders) {
+        // 如果这个文件夹刚被删除，跳过它
+        if (hasPendingDelete && pendingDeletes.type === 'folder' && pendingDeletes.id === remoteFolder.id) {
+            console.log('跳过被删除的远程文件夹:', remoteFolder.name);
+            continue;
+        }
+        
+        // 检查是否已存在
+        const existingIndex = mergedFolders.findIndex(f => f.id === remoteFolder.id);
+        
+        if (existingIndex === -1) {
+            // 不存在，添加
+            mergedFolders.push(remoteFolder);
+        } else {
+            // 存在，选择更新时间最新的
+            const localFolder = mergedFolders[existingIndex];
+            const localTime = new Date(localFolder.updatedAt || localFolder.createdAt || 0).getTime();
+            const remoteTime = new Date(remoteFolder.updatedAt || remoteFolder.createdAt || 0).getTime();
             
-            if (uploadSuccess) {
-                console.log('GitHub同步成功完成');
-                
-                // 4. 再次从GitHub获取数据，确保一致性
-                console.log('步骤4: 验证同步结果');
-                const verifyData = await this.fetchFromGitHub();
-                if (verifyData) {
-                    console.log('同步验证成功，数据版本:', verifyData.version);
-                }
-                
-                // 更新UI
-                this.renderFolders();
-                if (this.currentFolder) {
-                    this.renderMemos();
-                }
-                
-                this.updateLastSync();
-                this.showNotification('数据同步成功', 'success');
-            } else {
-                console.error('GitHub上传失败');
-                this.showNotification('数据同步失败', 'error');
+            if (remoteTime > localTime) {
+                mergedFolders[existingIndex] = remoteFolder;
             }
-            
-        } catch (error) {
-            console.error('GitHub同步失败:', error);
-            this.showNotification('同步失败: ' + error.message, 'error');
-        } finally {
-            this.syncing = false;
         }
     }
     
-    async fetchFromGitHub() {
-        const { username, repo, token } = this.config;
-        const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
+    // 合并备忘录 - 同样保留删除操作
+    const mergedMemos = [];
+    
+    // 首先添加所有本地备忘录
+    for (const localMemo of this.memos) {
+        mergedMemos.push(localMemo);
+    }
+    
+    // 然后添加远程备忘录（排除被删除的）
+    for (const remoteMemo of remoteMemos) {
+        // 如果这个备忘录刚被删除，跳过它
+        if (hasPendingDelete && pendingDeletes.type === 'memo' && pendingDeletes.id === remoteMemo.id) {
+            console.log('跳过被删除的远程备忘录:', remoteMemo.title);
+            continue;
+        }
         
-        console.log('从GitHub获取数据:', apiUrl);
+        // 检查是否已存在
+        const existingIndex = mergedMemos.findIndex(m => m.id === remoteMemo.id);
         
+        if (existingIndex === -1) {
+            // 不存在，添加
+            mergedMemos.push(remoteMemo);
+        } else {
+            // 存在，选择更新时间最新的
+            const localMemo = mergedMemos[existingIndex];
+            const localTime = new Date(localMemo.updatedAt || localMemo.createdAt || 0).getTime();
+            const remoteTime = new Date(remoteMemo.updatedAt || remoteMemo.createdAt || 0).getTime();
+            
+            if (remoteTime > localTime) {
+                mergedMemos[existingIndex] = remoteMemo;
+            }
+        }
+    }
+    
+    // 过滤掉文件夹已删除的备忘录
+    const validFolderIds = new Set(mergedFolders.map(f => f.id));
+    const validMemos = mergedMemos.filter(memo => validFolderIds.has(memo.folderId));
+    
+    // 更新数据
+    this.folders = mergedFolders.sort((a, b) => 
+        new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)
+    );
+    
+    this.memos = validMemos.sort((a, b) => 
+        new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)
+    );
+    
+    // 合并密码（排除被删除文件夹的密码）
+    for (const [folderId, password] of remotePasswords) {
+        // 如果文件夹还存在，才保留密码
+        if (validFolderIds.has(folderId)) {
+            this.folderPasswords.set(folderId, password);
+        }
+    }
+    
+    // 使用更高的版本号
+    this.dataVersion = Math.max(this.dataVersion + 1, remoteData.version || 0);
+    
+    console.log('带删除保护的数据合并完成', {
+        finalFolders: this.folders.length,
+        finalMemos: this.memos.length,
+        finalVersion: this.dataVersion
+    });
+    
+    // 保存合并后的数据到本地
+    this.saveLocalData();
+}
+
+// 修改删除执行方法，确保立即同步
+executeDelete() {
+    if (!this.pendingDelete.type || !this.pendingDelete.id) {
+        this.hideModal(this.confirmModal);
+        return;
+    }
+    
+    // 保存删除前的数据状态
+    const originalFolders = [...this.folders];
+    const originalMemos = [...this.memos];
+    const originalPasswords = new Map(this.folderPasswords);
+    
+    let deletedItemName = '';
+    let deleteSuccess = false;
+    
+    if (this.pendingDelete.type === 'memo') {
+        const memoIndex = this.memos.findIndex(m => m.id === this.pendingDelete.id);
+        if (memoIndex !== -1) {
+            deletedItemName = this.memos[memoIndex].title;
+            this.memos.splice(memoIndex, 1);
+            deleteSuccess = true;
+            
+            if (this.currentMemo && this.currentMemo.id === this.pendingDelete.id) {
+                this.showMemoList();
+                this.currentMemo = null;
+            }
+        }
+    } else if (this.pendingDelete.type === 'folder') {
+        const folderIndex = this.folders.findIndex(f => f.id === this.pendingDelete.id);
+        if (folderIndex !== -1) {
+            deletedItemName = this.folders[folderIndex].name;
+            this.folders.splice(folderIndex, 1);
+            
+            // 删除文件夹中的所有备忘录
+            const originalMemoCount = this.memos.length;
+            this.memos = this.memos.filter(memo => memo.folderId !== this.pendingDelete.id);
+            const deletedMemoCount = originalMemoCount - this.memos.length;
+            
+            // 删除文件夹密码
+            this.folderPasswords.delete(this.pendingDelete.id);
+            deleteSuccess = true;
+            
+            if (this.currentFolder && this.currentFolder.id === this.pendingDelete.id) {
+                this.currentFolder = null;
+                this.currentMemo = null;
+                this.showMemoList();
+                
+                if (this.currentFolderName) {
+                    this.currentFolderName.textContent = '请选择文件夹';
+                }
+                
+                if (this.newMemoBtn) {
+                    this.newMemoBtn.disabled = true;
+                }
+                
+                if (this.deleteFolderBtn) {
+                    this.deleteFolderBtn.disabled = true;
+                }
+            }
+            
+            console.log(`删除文件夹，同时删除了 ${deletedMemoCount} 个备忘录`);
+        }
+    }
+    
+    if (deleteSuccess) {
+        // 立即保存到本地
+        this.saveLocalData();
+        
+        // 立即同步到GitHub
+        if (this.config.storageType === 'github') {
+            this.showNotification(`正在删除 ${deletedItemName}...`, 'info');
+            
+            // 立即触发同步（不等待自动同步）
+            this.syncWithGitHub().then(() => {
+                this.showNotification(`"${deletedItemName}" 已删除并同步`, 'success');
+            }).catch(error => {
+                console.error('删除同步失败:', error);
+                // 如果同步失败，恢复原始数据
+                this.folders = originalFolders;
+                this.memos = originalMemos;
+                this.folderPasswords = originalPasswords;
+                this.saveLocalData();
+                this.renderFolders();
+                this.renderMemos();
+                this.showNotification(`删除失败: ${error.message}`, 'error');
+            });
+        } else {
+            this.showNotification(`"${deletedItemName}" 已删除`, 'success');
+        }
+        
+        // 立即更新UI
+        this.renderFolders();
+        this.renderMemos();
+    } else {
+        this.showNotification('删除失败，项目未找到', 'error');
+    }
+    
+    this.pendingDelete = { type: null, id: null };
+    this.hideModal(this.confirmModal);
+}
+
+// 修改保存到GitHub的方法，确保版本号递增
+async saveToGitHub() {
+    const { username, repo, token } = this.config;
+    const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
+    
+    console.log('保存数据到GitHub:', apiUrl);
+    
+    try {
+        // 准备数据 - 确保使用UTF-8编码
+        const data = {
+            folders: this.folders,
+            memos: this.memos,
+            passwords: Array.from(this.folderPasswords.entries()),
+            version: this.dataVersion + 1, // 总是递增版本号
+            lastModified: new Date().toISOString(),
+            charset: 'UTF-8',
+            deviceId: this.deviceId,
+            syncAt: new Date().toISOString(),
+            syncCount: (this.dataVersion || 0) + 1
+        };
+        
+        // 先获取当前文件的SHA（如果存在）
+        let sha = null;
+        let currentVersion = 0;
         try {
             const response = await fetch(apiUrl, {
                 headers: {
                     'Authorization': `token ${token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'GitHub-Memo-App'
+                    'Accept': 'application/vnd.github.v3+json'
                 }
             });
             
             if (response.ok) {
                 const fileInfo = await response.json();
-                if (fileInfo && fileInfo.content) {
-                    // 清理Base64字符串（移除换行符）
+                sha = fileInfo.sha;
+                
+                // 尝试获取当前版本号
+                if (fileInfo.content) {
                     const base64Str = fileInfo.content.replace(/\n/g, '');
-                    console.log('获取到GitHub数据，Base64长度:', base64Str.length);
-                    
-                    // 使用UTF-8安全解码
-                    const data = this.decodeJSONFromStorage(base64Str);
-                    
-                    if (data) {
-                        console.log('成功从GitHub获取数据:', {
-                            sha: fileInfo.sha?.substring(0, 8) || 'unknown',
-                            folders: data.folders?.length || 0,
-                            memos: data.memos?.length || 0,
-                            version: data.version || 0
-                        });
-                        return data;
-                    } else {
-                        console.error('GitHub数据解码失败');
-                        return null;
+                    const currentData = this.decodeJSONFromStorage(base64Str);
+                    if (currentData && currentData.version) {
+                        currentVersion = currentData.version;
+                        console.log('当前GitHub版本:', currentVersion, '本地版本:', this.dataVersion);
+                        
+                        // 如果远程版本更高，先合并再上传
+                        if (currentVersion > this.dataVersion) {
+                            console.log('远程版本更高，先合并数据');
+                            await this.mergeDataWithDeleteProtection(currentData, this.pendingDelete);
+                            data.version = Math.max(currentVersion, this.dataVersion) + 1;
+                        }
                     }
                 }
-            } else if (response.status === 404) {
-                console.log('GitHub上还没有数据文件，将创建新文件');
-                return null;
-            } else {
-                const errorText = await response.text();
-                console.error('GitHub API错误:', response.status, response.statusText, errorText);
-                return null;
+                
+                console.log('获取到文件SHA:', sha?.substring(0, 8));
             }
         } catch (error) {
-            console.error('从GitHub获取数据失败:', error);
-            return null;
+            console.log('文件不存在，将创建新文件');
         }
-    }
-    
-    async saveToGitHub() {
-        const { username, repo, token } = this.config;
-        const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
         
-        console.log('保存数据到GitHub:', apiUrl);
+        // 使用UTF-8安全编码
+        const content = this.encodeJSONForStorage(data);
+        console.log('准备上传的数据:', {
+            version: data.version,
+            folders: data.folders.length,
+            memos: data.memos.length,
+            size: content.length
+        });
         
-        try {
-            // 准备数据 - 确保使用UTF-8编码
-            const data = {
-                folders: this.folders,
-                memos: this.memos,
-                passwords: Array.from(this.folderPasswords.entries()),
-                version: this.dataVersion + 1, // 增加版本号
-                lastModified: new Date().toISOString(),
-                charset: 'UTF-8',
-                deviceId: this.deviceId,
-                syncAt: new Date().toISOString(),
-                syncCount: (this.dataVersion || 0) + 1
-            };
-            
-            // 先获取当前文件的SHA（如果存在）
-            let sha = null;
-            try {
-                const response = await fetch(apiUrl, {
-                    headers: {
-                        'Authorization': `token ${token}`,
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
-                });
-                
-                if (response.ok) {
-                    const fileInfo = await response.json();
-                    sha = fileInfo.sha;
-                    console.log('获取到文件SHA:', sha?.substring(0, 8));
-                }
-            } catch (error) {
-                console.log('文件不存在，将创建新文件');
-            }
-            
-            // 使用UTF-8安全编码
-            const content = this.encodeJSONForStorage(data);
-            console.log('准备上传的数据大小:', content.length, 'bytes');
-            
-            // 提交数据到GitHub
-            const commitData = {
-                message: `备忘录数据同步 v${data.version} - ${new Date().toLocaleString()} - 设备:${this.deviceId.substring(0, 8)}`,
-                content: content,
-                ...(sha ? { sha } : {})
-            };
-            
-            const response = await fetch(apiUrl, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `token ${token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(commitData)
+        // 提交数据到GitHub
+        const commitData = {
+            message: `备忘录数据同步 v${data.version} - ${new Date().toLocaleString()} - 设备:${this.deviceId.substring(0, 8)}`,
+            content: content,
+            ...(sha ? { sha } : {})
+        };
+        
+        const response = await fetch(apiUrl, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `token ${token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(commitData)
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log('数据保存到GitHub成功:', {
+                sha: result.content?.sha?.substring(0, 8),
+                message: result.commit?.message,
+                newVersion: data.version
             });
             
-            if (response.ok) {
-                const result = await response.json();
-                console.log('数据保存到GitHub成功:', {
-                    sha: result.content?.sha?.substring(0, 8),
-                    message: result.commit?.message
-                });
-                
-                // 更新本地版本号
-                this.dataVersion = data.version;
-                
-                // 保存到本地存储
-                this.saveLocalData();
-                
-                return true;
-            } else {
-                const error = await response.json();
-                console.error('保存到GitHub失败:', error);
-                return false;
-            }
-        } catch (error) {
+            // 更新本地版本号
+            this.dataVersion = data.version;
+            
+            // 保存到本地存储
+            this.saveLocalData();
+            
+            return true;
+        } else {
+            const error = await response.json();
             console.error('保存到GitHub失败:', error);
             return false;
         }
+    } catch (error) {
+        console.error('保存到GitHub失败:', error);
+        return false;
     }
-    
-    async mergeData(remoteData) {
-        console.log('开始合并数据...', {
-            localVersion: this.dataVersion,
-            remoteVersion: remoteData.version || 0,
-            localFolders: this.folders.length,
-            localMemos: this.memos.length,
-            remoteFolders: remoteData.folders?.length || 0,
-            remoteMemos: remoteData.memos?.length || 0
-        });
+}
+
+// 修改初始加载方法，确保同步逻辑正确
+async loadData() {
+    console.log('加载数据...');
+    try {
+        // 1. 加载本地数据
+        await this.loadLocalData();
         
-        // 如果远程版本更高，优先使用远程数据
-        if ((remoteData.version || 0) > this.dataVersion) {
-            console.log('远程版本更高，使用远程数据');
+        // 2. 如果是GitHub模式，同步数据
+        if (this.config.storageType === 'github') {
+            console.log('GitHub模式，开始初始同步...');
             
-            this.folders = remoteData.folders || [];
-            this.memos = remoteData.memos || [];
-            this.folderPasswords = new Map(remoteData.passwords || []);
-            this.dataVersion = remoteData.version || 0;
+            // 先尝试从GitHub获取数据
+            const remoteData = await this.fetchFromGitHub();
             
-            console.log('使用远程数据完成:', {
-                folders: this.folders.length,
-                memos: this.memos.length,
-                version: this.dataVersion
-            });
-            
-        } else if ((remoteData.version || 0) < this.dataVersion) {
-            console.log('本地版本更高，保持本地数据');
-            // 本地数据版本更高，保持本地数据
-            
-        } else {
-            console.log('版本相同，进行智能合并');
-            // 版本相同，进行智能合并
-            
-            const remoteFolders = remoteData.folders || [];
-            const remoteMemos = remoteData.memos || [];
-            const remotePasswords = new Map(remoteData.passwords || []);
-            
-            // 创建查找表
-            const localFolderMap = new Map(this.folders.map(f => [f.id, f]));
-            const localMemoMap = new Map(this.memos.map(m => [m.id, m]));
-            
-            // 合并文件夹（以更新时间为准）
-            for (const remoteFolder of remoteFolders) {
-                const localFolder = localFolderMap.get(remoteFolder.id);
+            if (remoteData) {
+                console.log('获取到远程数据，版本:', remoteData.version);
                 
-                if (!localFolder) {
-                    // 远程有，本地没有，添加
-                    this.folders.push(remoteFolder);
-                } else {
-                    // 两者都有，选择更新时间最新的
-                    const localTime = new Date(localFolder.updatedAt || localFolder.createdAt || 0).getTime();
-                    const remoteTime = new Date(remoteFolder.updatedAt || remoteFolder.createdAt || 0).getTime();
+                // 如果远程版本更高，使用远程数据
+                if ((remoteData.version || 0) > this.dataVersion) {
+                    console.log('远程版本更高，使用远程数据');
+                    this.folders = remoteData.folders || [];
+                    this.memos = remoteData.memos || [];
+                    this.folderPasswords = new Map(remoteData.passwords || []);
+                    this.dataVersion = remoteData.version || 0;
                     
-                    if (remoteTime > localTime) {
-                        // 远程更新，替换本地
-                        const index = this.folders.findIndex(f => f.id === remoteFolder.id);
-                        if (index !== -1) {
-                            this.folders[index] = remoteFolder;
-                        }
-                    }
-                }
-            }
-            
-            // 合并备忘录
-            for (const remoteMemo of remoteMemos) {
-                const localMemo = localMemoMap.get(remoteMemo.id);
-                
-                if (!localMemo) {
-                    // 远程有，本地没有，添加
-                    this.memos.push(remoteMemo);
+                    // 保存到本地
+                    this.saveLocalData();
+                } else if ((remoteData.version || 0) < this.dataVersion) {
+                    console.log('本地版本更高，上传本地数据');
+                    // 本地版本更高，上传到GitHub
+                    await this.saveToGitHub();
                 } else {
-                    // 两者都有，选择更新时间最新的
-                    const localTime = new Date(localMemo.updatedAt || localMemo.createdAt || 0).getTime();
-                    const remoteTime = new Date(remoteMemo.updatedAt || remoteMemo.createdAt || 0).getTime();
-                    
-                    if (remoteTime > localTime) {
-                        // 远程更新，替换本地
-                        const index = this.memos.findIndex(m => m.id === remoteMemo.id);
-                        if (index !== -1) {
-                            this.memos[index] = remoteMemo;
-                        }
-                    }
+                    console.log('版本相同，进行合并');
+                    // 版本相同，合并数据
+                    await this.mergeDataWithDeleteProtection(remoteData, {});
                 }
+            } else {
+                console.log('没有远程数据，上传本地数据到GitHub');
+                // 没有远程数据，上传本地数据
+                await this.saveToGitHub();
             }
-            
-            // 合并密码（远程优先）
-            this.folderPasswords = new Map([...remotePasswords, ...this.folderPasswords]);
-            
-            // 使用更高的版本号
-            this.dataVersion = Math.max(this.dataVersion, remoteData.version || 0);
         }
         
-        // 保存合并后的数据到本地
-        this.saveLocalData();
+        // 3. 渲染UI
+        this.renderFolders();
+        this.updateLastSync();
         
-        console.log('数据合并完成', {
-            finalFolders: this.folders.length,
-            finalMemos: this.memos.length,
-            finalVersion: this.dataVersion
+        console.log('数据加载完成', {
+            folders: this.folders.length,
+            memos: this.memos.length,
+            version: this.dataVersion,
+            storageType: this.config.storageType
         });
+        
+    } catch (error) {
+        console.error('加载数据失败:', error);
+        this.showNotification('数据加载失败: ' + error.message, 'error');
     }
+}
+
+// 添加一个手动强制同步的方法（可以在UI中添加按钮）
+forceSync() {
+    if (this.config.storageType !== 'github') {
+        this.showNotification('非GitHub存储模式，无法同步', 'warning');
+        return;
+    }
+    
+    this.showNotification('开始强制同步...', 'info');
+    this.syncWithGitHub();
+}
     
     // ========== 应用初始化 ==========
     
@@ -903,6 +1076,28 @@ class GitHubMemo {
             folders: this.folders.length,
             memos: this.memos.length
         });
+ // ... 其他事件绑定 ...
+    
+    // 手动同步按钮
+    const forceSyncBtn = document.getElementById('forceSyncBtn');
+    if (forceSyncBtn) {
+        forceSyncBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.forceSync();
+        });
+    }
+    
+    // 点击最后同步时间也可以触发同步
+    if (this.lastSync) {
+        this.lastSync.addEventListener('click', (e) => {
+            if (this.config.storageType === 'github') {
+                this.forceSync();
+            }
+        });
+    }
+    
+    // ... 其他代码 ...
+}
     }
     
     // ========== 文件夹管理 ==========
