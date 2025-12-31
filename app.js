@@ -9,12 +9,17 @@ class GitHubMemo {
         this.currentMemo = null;
         this.folderPasswords = new Map();
         
-        // 获取设备ID（使用立即执行的函数）
-        this.deviceId = this._getDeviceId();
+        // 获取设备ID（直接调用，不要用this.getDeviceId）
+        let deviceId = localStorage.getItem('memoDeviceId');
+        if (!deviceId) {
+            deviceId = 'device_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('memoDeviceId', deviceId);
+        }
+        this.deviceId = deviceId;
         console.log('设备ID:', this.deviceId);
         
         // 从加密配置加载
-        this.config = this._loadEncryptedConfig();
+        this.config = this.loadEncryptedConfig();
         
         // 其他初始化
         this.pendingDelete = { type: null, id: null };
@@ -37,18 +42,8 @@ class GitHubMemo {
         console.log('GitHubMemo 初始化完成');
     }
     
-    // 私有方法 - 获取设备ID
-    _getDeviceId() {
-        let deviceId = localStorage.getItem('memoDeviceId');
-        if (!deviceId) {
-            deviceId = 'device_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9);
-            localStorage.setItem('memoDeviceId', deviceId);
-        }
-        return deviceId;
-    }
-    
-    // 私有方法 - 安全Base64编码
-    _safeBtoa(str) {
+    // 安全Base64编码（支持中文）
+    safeBtoa(str) {
         try {
             const utf8Bytes = new TextEncoder().encode(str);
             let binary = '';
@@ -63,8 +58,8 @@ class GitHubMemo {
         }
     }
     
-    // 私有方法 - 安全Base64解码
-    _safeAtob(base64Str) {
+    // 安全Base64解码（支持中文）
+    safeAtob(base64Str) {
         try {
             const binary = atob(base64Str);
             const utf8Bytes = new Uint8Array(binary.length);
@@ -79,8 +74,7 @@ class GitHubMemo {
         }
     }
     
-    // 私有方法 - 加载配置
-    _loadEncryptedConfig() {
+    loadEncryptedConfig() {
         console.log('加载配置...');
         
         const defaultConfig = {
@@ -93,11 +87,11 @@ class GitHubMemo {
         
         // 检查URL参数
         const urlParams = new URLSearchParams(window.location.search);
-        const configFromUrl = this._getConfigFromUrlParams(urlParams);
+        const configFromUrl = this.getConfigFromUrlParams(urlParams);
         
         if (configFromUrl && configFromUrl.configured) {
             console.log('从URL参数加载配置成功');
-            this._clearUrlParams();
+            this.clearUrlParams();
             return configFromUrl;
         }
         
@@ -113,7 +107,7 @@ class GitHubMemo {
             
             if (config.token) {
                 try {
-                    config.token = this._safeAtob(config.token);
+                    config.token = this.safeAtob(config.token);
                 } catch (e) {
                     console.error('Token解密失败:', e);
                     config.token = '';
@@ -129,14 +123,13 @@ class GitHubMemo {
         }
     }
     
-    // 私有方法 - 从URL获取配置
-    _getConfigFromUrlParams(urlParams) {
+    getConfigFromUrlParams(urlParams) {
         const encodedConfig = urlParams.get('config');
         if (!encodedConfig) return null;
         
         try {
             const base64 = decodeURIComponent(encodedConfig);
-            const config = this._decodeJSONFromStorage(base64);
+            const config = this.decodeJSONFromStorage(base64);
             
             if (!config) return null;
             
@@ -152,7 +145,7 @@ class GitHubMemo {
                 configuredAt: new Date().toISOString()
             };
             
-            configToSave.token = this._safeBtoa(config.token);
+            configToSave.token = this.safeBtoa(config.token);
             localStorage.setItem('githubMemoConfig', JSON.stringify(configToSave));
             
             return { ...config, configured: true };
@@ -162,10 +155,9 @@ class GitHubMemo {
         }
     }
     
-    // 私有方法 - JSON解码
-    _decodeJSONFromStorage(base64Str) {
+    decodeJSONFromStorage(base64Str) {
         try {
-            const jsonStr = this._safeAtob(base64Str);
+            const jsonStr = this.safeAtob(base64Str);
             return JSON.parse(jsonStr);
         } catch (error) {
             console.error('decodeJSONFromStorage error:', error);
@@ -178,8 +170,7 @@ class GitHubMemo {
         }
     }
     
-    // 私有方法 - 清除URL参数
-    _clearUrlParams() {
+    clearUrlParams() {
         if (window.history.replaceState) {
             const url = new URL(window.location);
             url.searchParams.delete('config');
@@ -568,7 +559,7 @@ class GitHubMemo {
         this.folders.unshift(folder);
         
         if (visibilityValue === 'private' && password) {
-            this.folderPasswords.set(folder.id, this._safeBtoa(password));
+            this.folderPasswords.set(folder.id, this.safeBtoa(password));
         }
         
         this.saveLocalData();
@@ -865,7 +856,7 @@ class GitHubMemo {
         
         try {
             const jsonStr = JSON.stringify(shareConfig);
-            const base64Data = this._safeBtoa(jsonStr);
+            const base64Data = this.safeBtoa(jsonStr);
             const encoded = encodeURIComponent(base64Data);
             const baseUrl = window.location.origin + window.location.pathname;
             const shareLink = `${baseUrl}?config=${encoded}`;
@@ -960,7 +951,7 @@ class GitHubMemo {
         if (!password) return;
         
         const storedPassword = this.folderPasswords.get(this.currentFolder.id);
-        const enteredPassword = this._safeBtoa(password);
+        const enteredPassword = this.safeBtoa(password);
         
         if (enteredPassword === storedPassword) {
             this.hideModal(this.passwordModal);
