@@ -263,7 +263,7 @@ class GitHubMemo {
         }
     }
     
-    // ========== GitHub API 交互 ==========
+    // ========== GitHub API 交互（修复CORS问题） ==========
     
     async fetchFromGitHub() {
         const { username, repo, token } = this.config;
@@ -272,13 +272,19 @@ class GitHubMemo {
         console.log('从GitHub获取数据:', apiUrl);
         
         try {
+            // 修复CORS问题的请求头
+            const headers = {
+                'Authorization': `token ${token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                // 移除可能引起CORS问题的headers
+                // 'Cache-Control': 'no-cache' // 这个header会引起CORS问题
+            };
+            
+            // 对于GitHub Pages，使用更简单的请求
             const response = await fetch(apiUrl, {
-                headers: {
-                    'Authorization': `token ${token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'Cache-Control': 'no-cache'
-                },
-                timeout: 10000
+                headers: headers,
+                mode: 'cors', // 明确指定CORS模式
+                credentials: 'omit' // 不发送credentials
             });
             
             if (response.ok) {
@@ -309,6 +315,58 @@ class GitHubMemo {
             }
         } catch (error) {
             console.error('获取GitHub数据失败:', error);
+            
+            // 如果是CORS错误，尝试使用代理
+            if (error.message.includes('CORS') || error.message.includes('跨域')) {
+                console.log('检测到CORS错误，尝试使用代理...');
+                return await this.fetchFromGitHubWithProxy();
+            }
+            
+            throw error;
+        }
+    }
+    
+    // 使用代理解决CORS问题
+    async fetchFromGitHubWithProxy() {
+        const { username, repo, token } = this.config;
+        
+        // 使用CORS代理
+        const proxyUrl = 'https://corsproxy.io/?';
+        const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
+        const proxiedUrl = proxyUrl + encodeURIComponent(apiUrl);
+        
+        console.log('通过代理获取数据:', proxiedUrl);
+        
+        try {
+            const headers = {
+                'Authorization': `token ${token}`,
+                'Accept': 'application/vnd.github.v3+json'
+            };
+            
+            const response = await fetch(proxiedUrl, {
+                headers: headers
+            });
+            
+            if (response.ok) {
+                const fileInfo = await response.json();
+                
+                if (fileInfo.content) {
+                    const base64Str = fileInfo.content.replace(/\n/g, '');
+                    const data = this.decodeJSONFromStorage(base64Str);
+                    
+                    if (data) {
+                        console.log('通过代理从GitHub获取数据成功');
+                        return data;
+                    }
+                }
+            } else if (response.status === 404) {
+                console.log('GitHub上还没有数据文件');
+                return null;
+            } else {
+                throw new Error(`代理请求失败: ${response.status}`);
+            }
+        } catch (error) {
+            console.error('通过代理获取数据失败:', error);
             throw error;
         }
     }
@@ -324,11 +382,16 @@ class GitHubMemo {
             
             // 获取当前文件的SHA
             try {
+                // 使用简单的headers避免CORS问题
+                const headers = {
+                    'Authorization': `token ${token}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                };
+                
                 const response = await fetch(apiUrl, {
-                    headers: {
-                        'Authorization': `token ${token}`,
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
+                    headers: headers,
+                    mode: 'cors',
+                    credentials: 'omit'
                 });
                 
                 if (response.ok) {
@@ -352,7 +415,7 @@ class GitHubMemo {
                 deviceName: this.deviceName,
                 syncAt: new Date().toISOString(),
                 syncCount: (this.dataVersion || 0) + 1,
-                pendingOperations: this.pendingOperations // 包含待处理操作
+                pendingOperations: this.pendingOperations
             };
             
             // 使用UTF-8安全编码
@@ -397,10 +460,95 @@ class GitHubMemo {
             } else {
                 const error = await response.json();
                 console.error('保存到GitHub失败:', error);
+                
+                // 如果是CORS错误，尝试使用代理
+                if (error.message && (error.message.includes('CORS') || error.message.includes('Access-Control'))) {
+                    console.log('检测到CORS错误，尝试使用代理保存...');
+                    return await this.saveToGitHubWithProxy(sha, content);
+                }
+                
                 throw new Error(`保存失败: ${error.message || '未知错误'}`);
             }
         } catch (error) {
             console.error('保存到GitHub失败:', error);
+            
+            // 如果是CORS错误，尝试使用代理
+            if (error.message && (error.message.includes('CORS') || error.message.includes('Access-Control'))) {
+                console.log('检测到CORS错误，尝试使用代理保存...');
+                return await this.saveToGitHubWithProxy();
+            }
+            
+            throw error;
+        }
+    }
+    
+    // 使用代理保存到GitHub
+    async saveToGitHubWithProxy(sha = null, content = null) {
+        const { username, repo, token } = this.config;
+        
+        // 如果content未提供，准备数据
+        if (!content) {
+            const data = {
+                folders: this.folders,
+                memos: this.memos,
+                passwords: Array.from(this.folderPasswords.entries()),
+                version: this.dataVersion,
+                lastModified: new Date().toISOString(),
+                charset: 'UTF-8',
+                deviceId: this.deviceId,
+                deviceName: this.deviceName,
+                syncAt: new Date().toISOString(),
+                syncCount: (this.dataVersion || 0) + 1,
+                pendingOperations: this.pendingOperations
+            };
+            
+            content = this.encodeJSONForStorage(data);
+        }
+        
+        // 使用CORS代理
+        const proxyUrl = 'https://corsproxy.io/?';
+        const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/data.json`;
+        const proxiedUrl = proxyUrl + encodeURIComponent(apiUrl);
+        
+        console.log('通过代理保存数据到GitHub:', proxiedUrl);
+        
+        const commitData = {
+            message: `备忘录数据同步 v${this.dataVersion} - ${new Date().toLocaleString()} - ${this.deviceName}`,
+            content: content,
+            ...(sha ? { sha } : {})
+        };
+        
+        try {
+            const response = await fetch(proxiedUrl, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `token ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(commitData)
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                console.log('通过代理保存数据到GitHub成功');
+                
+                // 更新同步状态
+                this.lastSyncChecksum = this.calculateChecksum();
+                this.lastSyncTime = Date.now();
+                localStorage.setItem('memoLastSyncChecksum', this.lastSyncChecksum);
+                localStorage.setItem('memoLastSyncTime', this.lastSyncTime.toString());
+                
+                // 保存到本地存储
+                this.saveLocalData();
+                
+                return true;
+            } else {
+                const error = await response.json();
+                throw new Error(`代理保存失败: ${error.message || '未知错误'}`);
+            }
+        } catch (error) {
+            console.error('通过代理保存数据失败:', error);
             throw error;
         }
     }
@@ -594,7 +742,7 @@ class GitHubMemo {
         // 6. 清空已处理的删除操作
         const remainingDeletes = this.pendingOperations.deletes.filter(op => {
             const folderDeleted = op.type === 'folder' && deletedFolderIds.includes(op.id);
-            const memoDeleted = op.type === 'memo' && finalMemos.some(m => m.id === op.id && shouldDelete);
+            const memoDeleted = op.type === 'memo' && finalMemos.some(m => m.id === op.id);
             return !folderDeleted && !memoDeleted;
         });
         
@@ -839,7 +987,7 @@ class GitHubMemo {
             clearInterval(this.autoSyncInterval);
         }
         
-        // 每30秒检查一次是否需要同步
+        // 每60秒检查一次是否需要同步
         this.autoSyncInterval = setInterval(() => {
             if (this.config.storageType === 'github' && 
                 this.networkStatus === 'online' && 
@@ -856,7 +1004,7 @@ class GitHubMemo {
                     this.syncWithGitHub().catch(console.error);
                 }
             }
-        }, 30 * 1000);
+        }, 60 * 1000);
         
         console.log('自动同步已启动');
     }
@@ -1027,6 +1175,7 @@ class GitHubMemo {
     bindEvents() {
         console.log('绑定事件...');
         
+        // 绑定事件（与之前相同）
         if (this.newFolderBtn) {
             this.newFolderBtn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -1167,6 +1316,191 @@ class GitHubMemo {
         }
         
         console.log('事件绑定完成');
+// ========== 移动端优化 ==========
+
+addMobileOptimizations() {
+    console.log('添加移动端优化...');
+    
+    // 检测是否为移动设备
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    console.log('是否为移动设备:', this.isMobile);
+    
+    if (this.isMobile) {
+        // 调整编辑器区域高度
+        this.adjustEditorForMobile();
+        
+        // 添加键盘事件处理
+        this.addKeyboardHandling();
+        
+        // 优化触摸事件
+        this.optimizeTouchEvents();
+        
+        // 添加返回按钮处理
+        this.addBackButtonHandler();
+    }
+}
+
+adjustEditorForMobile() {
+    // 在移动设备上，调整编辑器高度
+    if (this.memoContent && window.innerHeight < 800) {
+        const viewportHeight = window.innerHeight;
+        const editorHeight = viewportHeight * 0.6; // 使用60%的屏幕高度
+        this.memoContent.style.minHeight = `${editorHeight}px`;
+        
+        console.log('调整编辑器高度:', editorHeight);
+    }
+}
+
+addKeyboardHandling() {
+    // 处理虚拟键盘弹出
+    if (this.memoContent) {
+        this.memoContent.addEventListener('focus', () => {
+            setTimeout(() => {
+                if (this.isMobile) {
+                    // 滚动到可见区域
+                    this.memoContent.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'center' 
+                    });
+                }
+            }, 300);
+        });
+    }
+}
+
+optimizeTouchEvents() {
+    // 优化触摸事件，防止双击缩放
+    document.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 1) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+    
+    // 优化按钮触摸反馈
+    const buttons = document.querySelectorAll('.btn, .memo-action-btn, .folder-delete-btn');
+    buttons.forEach(button => {
+        button.addEventListener('touchstart', () => {
+            button.style.transform = 'scale(0.95)';
+        });
+        
+        button.addEventListener('touchend', () => {
+            button.style.transform = 'scale(1)';
+        });
+    });
+}
+
+addBackButtonHandler() {
+    // 在移动端添加返回按钮处理
+    if (this.isMobile) {
+        // 监听安卓返回按钮
+        window.addEventListener('popstate', (e) => {
+            if (this.editorView && !this.editorView.classList.contains('hidden')) {
+                // 如果正在编辑，先关闭编辑器
+                this.closeEditor();
+                e.preventDefault();
+            }
+        });
+    }
+}
+
+// ========== 在 init() 方法中调用移动端优化 ==========
+
+init() {
+    console.log('初始化应用...配置状态:', this.config.configured);
+    
+    if (!this.config.configured) {
+        console.log('未配置，跳转到配置页面');
+        setTimeout(() => {
+            if (!window.location.href.includes('config.html')) {
+                window.location.href = 'config.html';
+            }
+        }, 100);
+        return;
+    }
+    
+    this.initElements();
+    this.bindEvents();
+    
+    // 添加移动端优化
+    this.addMobileOptimizations();
+    
+    this.loadData();
+    
+    // 监听网络状态
+    window.addEventListener('online', () => {
+        this.networkStatus = 'online';
+        this.showNotification('网络已连接', 'success');
+        
+        // 如果是GitHub模式，网络恢复时立即同步
+        if (this.config.storageType === 'github') {
+            setTimeout(() => {
+                if (!this.syncing) {
+                    console.log('网络恢复，自动同步');
+                    this.syncWithGitHub();
+                }
+            }, 2000);
+        }
+    });
+    
+    window.addEventListener('offline', () => {
+        this.networkStatus = 'offline';
+        this.showNotification('网络已断开', 'warning');
+    });
+    
+    // 如果是GitHub模式，启动自动同步
+    if (this.config.storageType === 'github') {
+        this.startAutoSync();
+        
+        // 页面获取焦点时同步
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && 
+                this.networkStatus === 'online' && 
+                !this.syncing) {
+                setTimeout(() => this.syncWithGitHub(), 1000);
+            }
+        });
+        
+        // 显示同步状态
+        this.updateSyncStatusDisplay();
+    }
+    
+    // 监听窗口大小变化，调整移动端布局
+    window.addEventListener('resize', () => {
+        this.adjustMobileLayout();
+    });
+    
+    console.log('应用初始化完成');
+}
+
+adjustMobileLayout() {
+    if (this.isMobile) {
+        // 重新调整布局
+        this.adjustEditorForMobile();
+        
+        // 更新按钮可见性
+        if (window.innerWidth < 480) {
+            // 超小屏幕优化
+            this.optimizeForVerySmallScreen();
+        }
+    }
+}
+
+optimizeForVerySmallScreen() {
+    // 超小屏幕进一步优化
+    const buttons = document.querySelectorAll('.btn');
+    buttons.forEach(button => {
+        const originalText = button.textContent;
+        const hasIcon = button.querySelector('i');
+        
+        if (hasIcon && originalText.length > 2) {
+            // 只保留图标，隐藏文字
+            const span = button.querySelector('span');
+            if (span) {
+                span.style.display = 'none';
+            }
+        }
+    });
+}
     }
     
     // ========== 数据加载和保存 ==========
@@ -1183,16 +1517,19 @@ class GitHubMemo {
             // 3. 更新同步状态显示
             this.updateSyncStatusDisplay();
             
-            // 4. 如果是GitHub模式，立即同步
+            // 4. 如果是GitHub模式，尝试同步
             if (this.config.storageType === 'github') {
-                console.log('GitHub模式，开始初始同步...');
+                console.log('GitHub模式，尝试同步...');
                 
                 // 先检查网络
                 if (navigator.onLine) {
                     // 延迟1秒开始同步，确保页面完全加载
                     setTimeout(() => {
-                        console.log('网络正常，开始初始同步');
-                        this.syncWithGitHub();
+                        console.log('网络正常，尝试同步');
+                        this.syncWithGitHub().catch(error => {
+                            console.warn('初始同步失败，将在后台重试:', error);
+                            this.showNotification('同步失败，将在后台重试', 'warning');
+                        });
                     }, 1000);
                 } else {
                     console.log('网络离线，跳过初始同步');
@@ -1373,6 +1710,7 @@ class GitHubMemo {
         });
     }
     
+    // 其他UI方法保持不变...
     showNewFolderModal() {
         console.log('显示新建文件夹模态框');
         if (!this.newFolderModal || !this.folderNameInput) {
@@ -1454,8 +1792,6 @@ class GitHubMemo {
         
         this.showNotification('文件夹创建成功: ' + name, 'success');
     }
-    
-    // ========== 备忘录管理 ==========
     
     selectFolder(folder) {
         console.log('选择文件夹:', folder.name);
