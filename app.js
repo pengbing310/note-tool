@@ -1,46 +1,43 @@
 class GitHubMemo {
     constructor() {
+        console.log('开始初始化 GitHubMemo...');
+        
+        // 先定义基础数据
         this.folders = [];
         this.memos = [];
         this.currentFolder = null;
         this.currentMemo = null;
         this.folderPasswords = new Map();
         
-        // 先定义在构造函数中会用到的方法
-        this.getDeviceId = this._getDeviceId.bind(this);
-        this.safeBtoa = this._safeBtoa.bind(this);
-        this.safeAtob = this._safeAtob.bind(this);
+        // 获取设备ID（使用立即执行的函数）
+        this.deviceId = this._getDeviceId();
+        console.log('设备ID:', this.deviceId);
         
         // 从加密配置加载
-        this.config = this.loadEncryptedConfig();
+        this.config = this._loadEncryptedConfig();
         
-        // 删除相关
-        this.pendingDelete = {
-            type: null,
-            id: null
-        };
-        
-        // 同步相关
+        // 其他初始化
+        this.pendingDelete = { type: null, id: null };
         this.syncInterval = null;
         this.autoSyncInterval = null;
         this.lastSyncTime = 0;
         this.syncing = false;
         this.retryCount = 0;
         this.maxRetries = 3;
-        
-        // 数据版本
         this.dataVersion = 0;
-        
-        // 设备ID
-        this.deviceId = this.getDeviceId();
-        
-        // 网络状态
         this.networkStatus = navigator.onLine ? 'online' : 'offline';
+        this.debugMode = localStorage.getItem('memoDebugMode') === 'true';
+        this.syncQueue = [];
+        this.processingQueue = false;
+        this.githubApiAvailable = true;
+        this.rateLimitExceeded = false;
+        this.rateLimitResetTime = 0;
+        this.requestCount = 0;
         
-        console.log('GitHubMemo初始化完成，设备ID:', this.deviceId);
+        console.log('GitHubMemo 初始化完成');
     }
     
-    // 获取设备ID
+    // 私有方法 - 获取设备ID
     _getDeviceId() {
         let deviceId = localStorage.getItem('memoDeviceId');
         if (!deviceId) {
@@ -50,7 +47,7 @@ class GitHubMemo {
         return deviceId;
     }
     
-    // 安全Base64编码（支持中文）
+    // 私有方法 - 安全Base64编码
     _safeBtoa(str) {
         try {
             const utf8Bytes = new TextEncoder().encode(str);
@@ -66,7 +63,7 @@ class GitHubMemo {
         }
     }
     
-    // 安全Base64解码（支持中文）
+    // 私有方法 - 安全Base64解码
     _safeAtob(base64Str) {
         try {
             const binary = atob(base64Str);
@@ -82,37 +79,10 @@ class GitHubMemo {
         }
     }
     
-    // 安全的JSON字符串编码
-    encodeJSONForStorage(obj) {
-        try {
-            const jsonStr = JSON.stringify(obj);
-            return this.safeBtoa(jsonStr);
-        } catch (error) {
-            console.error('encodeJSONForStorage error:', error);
-            return btoa(JSON.stringify(obj));
-        }
-    }
-    
-    // 安全的JSON字符串解码
-    decodeJSONFromStorage(base64Str) {
-        try {
-            const jsonStr = this.safeAtob(base64Str);
-            return JSON.parse(jsonStr);
-        } catch (error) {
-            console.error('decodeJSONFromStorage error:', error);
-            try {
-                return JSON.parse(atob(base64Str));
-            } catch (e2) {
-                console.error('Fallback decode also failed:', e2);
-                return null;
-            }
-        }
-    }
-    
-    loadEncryptedConfig() {
+    // 私有方法 - 加载配置
+    _loadEncryptedConfig() {
         console.log('加载配置...');
         
-        // 默认配置
         const defaultConfig = {
             username: '',
             repo: 'memo-data',
@@ -121,13 +91,13 @@ class GitHubMemo {
             configured: false
         };
         
-        // 首先检查URL参数
+        // 检查URL参数
         const urlParams = new URLSearchParams(window.location.search);
-        const configFromUrl = this.getConfigFromUrlParams(urlParams);
+        const configFromUrl = this._getConfigFromUrlParams(urlParams);
         
         if (configFromUrl && configFromUrl.configured) {
             console.log('从URL参数加载配置成功');
-            this.clearUrlParams();
+            this._clearUrlParams();
             return configFromUrl;
         }
         
@@ -143,7 +113,7 @@ class GitHubMemo {
             
             if (config.token) {
                 try {
-                    config.token = this.safeAtob(config.token);
+                    config.token = this._safeAtob(config.token);
                 } catch (e) {
                     console.error('Token解密失败:', e);
                     config.token = '';
@@ -159,45 +129,57 @@ class GitHubMemo {
         }
     }
     
-    getConfigFromUrlParams(urlParams) {
+    // 私有方法 - 从URL获取配置
+    _getConfigFromUrlParams(urlParams) {
         const encodedConfig = urlParams.get('config');
         if (!encodedConfig) return null;
         
         try {
             const base64 = decodeURIComponent(encodedConfig);
-            const config = this.decodeJSONFromStorage(base64);
+            const config = this._decodeJSONFromStorage(base64);
             
-            if (!config) {
-                console.log('配置解析失败');
-                return null;
-            }
+            if (!config) return null;
             
             if (!config.username || !config.repo || !config.token) {
                 console.log('URL配置缺少必要字段');
                 return null;
             }
             
-            console.log('从URL参数解析配置成功:', config.username, config.repo);
+            console.log('从URL参数解析配置成功:', config.username);
             
             const configToSave = {
                 ...config,
                 configuredAt: new Date().toISOString()
             };
             
-            configToSave.token = this.safeBtoa(config.token);
+            configToSave.token = this._safeBtoa(config.token);
             localStorage.setItem('githubMemoConfig', JSON.stringify(configToSave));
             
-            return {
-                ...config,
-                configured: true
-            };
+            return { ...config, configured: true };
         } catch (error) {
             console.error('URL参数解析失败:', error);
             return null;
         }
     }
     
-    clearUrlParams() {
+    // 私有方法 - JSON解码
+    _decodeJSONFromStorage(base64Str) {
+        try {
+            const jsonStr = this._safeAtob(base64Str);
+            return JSON.parse(jsonStr);
+        } catch (error) {
+            console.error('decodeJSONFromStorage error:', error);
+            try {
+                return JSON.parse(atob(base64Str));
+            } catch (e2) {
+                console.error('Fallback decode also failed:', e2);
+                return null;
+            }
+        }
+    }
+    
+    // 私有方法 - 清除URL参数
+    _clearUrlParams() {
         if (window.history.replaceState) {
             const url = new URL(window.location);
             url.searchParams.delete('config');
@@ -205,125 +187,7 @@ class GitHubMemo {
         }
     }
     
-    // 生成分享链接的方法
-    generateShareLink() {
-        if (!this.config.username || !this.config.repo || !this.config.token) {
-            alert('请先配置GitHub信息');
-            return null;
-        }
-        
-        const shareConfig = {
-            username: this.config.username,
-            repo: this.config.repo,
-            token: this.config.token,
-            storageType: this.config.storageType,
-            sharedAt: new Date().toISOString(),
-            note: 'GitHub备忘录配置链接',
-            version: '1.0',
-            charset: 'UTF-8'
-        };
-        
-        try {
-            const base64Data = this.encodeJSONForStorage(shareConfig);
-            const encoded = encodeURIComponent(base64Data);
-            const baseUrl = window.location.origin + window.location.pathname;
-            const shareLink = `${baseUrl}?config=${encoded}`;
-            
-            return {
-                link: shareLink,
-                config: shareConfig
-            };
-        } catch (error) {
-            console.error('生成分享链接失败:', error);
-            alert('生成分享链接失败，请重试');
-            return null;
-        }
-    }
-    
-    // 显示分享配置的模态框
-    showShareConfigModal() {
-        console.log('显示分享配置模态框');
-        const shareData = this.generateShareLink();
-        if (!shareData) return;
-        
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <h3><i class="fas fa-share-alt"></i> 分享配置</h3>
-                <p>复制以下链接，在其他设备上打开即可自动配置：</p>
-                
-                <div class="share-link-container">
-                    <input type="text" id="shareLinkInput" class="form-control" value="${shareData.link}" readonly>
-                    <button id="copyShareLinkBtn" class="btn btn-primary">
-                        <i class="fas fa-copy"></i> 复制链接
-                    </button>
-                </div>
-                
-                <div class="config-info">
-                    <p><strong>包含的配置信息：</strong></p>
-                    <ul>
-                        <li>用户名: ${this.escapeHtml(shareData.config.username)}</li>
-                        <li>仓库: ${this.escapeHtml(shareData.config.repo)}</li>
-                        <li>存储类型: ${shareData.config.storageType === 'github' ? 'GitHub存储' : '本地存储'}</li>
-                    </ul>
-                </div>
-                
-                <div class="modal-actions">
-                    <button id="closeShareModalBtn" class="btn btn-secondary">关闭</button>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        const overlay = document.getElementById('modalOverlay');
-        if (overlay) overlay.classList.remove('hidden');
-        modal.classList.remove('hidden');
-        
-        const copyBtn = modal.querySelector('#copyShareLinkBtn');
-        const closeBtn = modal.querySelector('#closeShareModalBtn');
-        const shareInput = modal.querySelector('#shareLinkInput');
-        
-        copyBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            shareInput.select();
-            try {
-                document.execCommand('copy');
-                copyBtn.innerHTML = '<i class="fas fa-check"></i> 已复制';
-                copyBtn.disabled = true;
-                
-                setTimeout(() => {
-                    copyBtn.innerHTML = '<i class="fas fa-copy"></i> 复制链接';
-                    copyBtn.disabled = false;
-                }, 2000);
-            } catch (err) {
-                navigator.clipboard.writeText(shareInput.value).then(() => {
-                    copyBtn.innerHTML = '<i class="fas fa-check"></i> 已复制';
-                    copyBtn.disabled = true;
-                    
-                    setTimeout(() => {
-                        copyBtn.innerHTML = '<i class="fas fa-copy"></i> 复制链接';
-                        copyBtn.disabled = false;
-                    }, 2000);
-                });
-            }
-        });
-        
-        closeBtn.addEventListener('click', () => {
-            modal.remove();
-            if (overlay) overlay.classList.add('hidden');
-        });
-        
-        if (overlay) {
-            overlay.addEventListener('click', () => {
-                modal.remove();
-                overlay.classList.add('hidden');
-            });
-        }
-    }
+    // 公共方法开始
     
     init() {
         console.log('初始化应用...配置状态:', this.config.configured);
@@ -348,18 +212,14 @@ class GitHubMemo {
     initElements() {
         console.log('初始化元素...');
         
-        // 文件夹相关
+        // 获取所有需要的元素
         this.foldersList = document.getElementById('foldersList');
         this.newFolderBtn = document.getElementById('newFolderBtn');
         this.currentFolderName = document.getElementById('currentFolderName');
         this.deleteFolderBtn = document.getElementById('deleteFolderBtn');
-        
-        // 备忘录相关
         this.memoGrid = document.getElementById('memoGrid');
         this.newMemoBtn = document.getElementById('newMemoBtn');
         this.memoListView = document.getElementById('memoListView');
-        
-        // 编辑器相关
         this.editorView = document.getElementById('editorView');
         this.memoTitle = document.getElementById('memoTitle');
         this.memoContent = document.getElementById('memoContent');
@@ -369,21 +229,16 @@ class GitHubMemo {
         this.exportMemoBtn = document.getElementById('exportMemoBtn');
         this.charCount = document.getElementById('charCount');
         this.lastModified = document.getElementById('lastModified');
-        
-        // 其他按钮
         this.exportAllBtn = document.getElementById('exportAllBtn');
         this.lastSync = document.getElementById('lastSync');
         this.storageMode = document.getElementById('storageMode');
         this.shareConfigBtn = document.getElementById('shareConfigBtn');
         
-        // 更新存储模式显示
-        if (this.storageMode) {
-            this.storageMode.textContent = this.config.storageType === 'github' ? 'GitHub' : '本地';
-        }
-        
         // 模态框元素
         this.modalOverlay = document.getElementById('modalOverlay');
         this.newFolderModal = document.getElementById('newFolderModal');
+        this.passwordModal = document.getElementById('passwordModal');
+        this.confirmModal = document.getElementById('confirmModal');
         
         if (this.newFolderModal) {
             this.folderNameInput = document.getElementById('folderName');
@@ -394,18 +249,21 @@ class GitHubMemo {
             this.cancelFolderBtn = document.getElementById('cancelFolderBtn');
         }
         
-        this.passwordModal = document.getElementById('passwordModal');
         if (this.passwordModal) {
             this.inputPassword = document.getElementById('inputPassword');
             this.submitPasswordBtn = document.getElementById('submitPasswordBtn');
             this.cancelPasswordBtn = document.getElementById('cancelPasswordBtn');
         }
         
-        this.confirmModal = document.getElementById('confirmModal');
         if (this.confirmModal) {
             this.confirmMessage = document.getElementById('confirmMessage');
             this.confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
             this.cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+        }
+        
+        // 更新存储模式显示
+        if (this.storageMode) {
+            this.storageMode.textContent = this.config.storageType === 'github' ? 'GitHub' : '本地';
         }
         
         console.log('元素初始化完成');
@@ -416,35 +274,9 @@ class GitHubMemo {
         
         // 文件夹事件
         if (this.newFolderBtn) {
-            console.log('绑定新建文件夹按钮');
             this.newFolderBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.showNewFolderModal();
-            });
-        }
-        
-        // 模态框内的事件绑定
-        if (this.visibilityRadios) {
-            this.visibilityRadios.forEach(radio => {
-                radio.addEventListener('change', (e) => {
-                    if (this.passwordGroup) {
-                        this.passwordGroup.classList.toggle('hidden', e.target.value === 'public');
-                    }
-                });
-            });
-        }
-        
-        if (this.createFolderBtn) {
-            this.createFolderBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.createFolder();
-            });
-        }
-        
-        if (this.cancelFolderBtn) {
-            this.cancelFolderBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.hideModal(this.newFolderModal);
             });
         }
         
@@ -455,24 +287,8 @@ class GitHubMemo {
             });
         }
         
-        // 密码事件
-        if (this.submitPasswordBtn) {
-            this.submitPasswordBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.verifyPassword();
-            });
-        }
-        
-        if (this.cancelPasswordBtn) {
-            this.cancelPasswordBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.hideModal(this.passwordModal);
-            });
-        }
-        
         // 备忘录事件
         if (this.newMemoBtn) {
-            console.log('绑定新建备忘录按钮');
             this.newMemoBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.createMemo();
@@ -516,14 +332,51 @@ class GitHubMemo {
         
         // 分享按钮事件
         if (this.shareConfigBtn) {
-            console.log('绑定分享配置按钮');
             this.shareConfigBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.showShareConfigModal();
             });
         }
         
-        // 删除确认事件
+        // 模态框内的事件绑定
+        if (this.visibilityRadios) {
+            this.visibilityRadios.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    if (this.passwordGroup) {
+                        this.passwordGroup.classList.toggle('hidden', e.target.value === 'public');
+                    }
+                });
+            });
+        }
+        
+        if (this.createFolderBtn) {
+            this.createFolderBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.createFolder();
+            });
+        }
+        
+        if (this.cancelFolderBtn) {
+            this.cancelFolderBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.hideModal(this.newFolderModal);
+            });
+        }
+        
+        if (this.submitPasswordBtn) {
+            this.submitPasswordBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.verifyPassword();
+            });
+        }
+        
+        if (this.cancelPasswordBtn) {
+            this.cancelPasswordBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.hideModal(this.passwordModal);
+            });
+        }
+        
         if (this.confirmDeleteBtn) {
             this.confirmDeleteBtn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -553,13 +406,10 @@ class GitHubMemo {
     async loadData() {
         console.log('加载数据...');
         try {
-            // 加载本地数据
             await this.loadLocalData();
-            
             this.renderFolders();
             this.updateLastSync();
-            console.log('数据加载完成，文件夹数:', this.folders.length, '备忘录数:', this.memos.length);
-            
+            console.log('数据加载完成');
         } catch (error) {
             console.error('加载数据失败:', error);
             alert('数据加载失败: ' + error.message);
@@ -577,7 +427,7 @@ class GitHubMemo {
                 this.memos = data.memos || [];
                 this.folderPasswords = new Map(data.passwords || []);
                 this.dataVersion = data.version || 0;
-                console.log('从本地存储加载数据成功，文件夹数:', this.folders.length);
+                console.log('加载成功，文件夹:', this.folders.length, '备忘录:', this.memos.length);
             } catch (e) {
                 console.error('本地数据解析失败:', e);
                 this.initializeEmptyData();
@@ -707,7 +557,7 @@ class GitHubMemo {
         
         const now = new Date().toISOString();
         const folder = {
-            id: 'folder_' + Date.now().toString(),
+            id: 'folder_' + Date.now(),
             name: name,
             visibility: visibilityValue,
             createdAt: now,
@@ -718,16 +568,12 @@ class GitHubMemo {
         this.folders.unshift(folder);
         
         if (visibilityValue === 'private' && password) {
-            this.folderPasswords.set(folder.id, this.safeBtoa(password));
+            this.folderPasswords.set(folder.id, this._safeBtoa(password));
         }
         
-        // 保存数据
         this.saveLocalData();
-        
         this.renderFolders();
         this.hideModal(this.newFolderModal);
-        
-        // 选择新创建的文件夹
         this.selectFolder(folder);
         
         alert('文件夹创建成功: ' + name);
@@ -782,7 +628,7 @@ class GitHubMemo {
         
         const now = new Date().toISOString();
         this.currentMemo = {
-            id: 'memo_' + Date.now().toString(),
+            id: 'memo_' + Date.now(),
             folderId: this.currentFolder.id,
             title: '新备忘录',
             content: '',
@@ -972,30 +818,14 @@ class GitHubMemo {
         const memoIndex = this.memos.findIndex(m => m.id === this.currentMemo.id);
         if (memoIndex !== -1) {
             this.memos[memoIndex] = this.currentMemo;
+        } else {
+            this.memos.unshift(this.currentMemo);
         }
         
-        // 保存数据
         this.saveLocalData();
-        
-        // 更新视图
         this.renderMemos();
         
         alert('备忘录已保存: ' + title);
-    }
-    
-    closeEditor() {
-        if (this.currentMemo && 
-            (this.memoTitle.value.trim() !== this.currentMemo.title || 
-             this.memoContent.value.trim() !== this.currentMemo.content)) {
-            
-            if (confirm('备忘录有未保存的更改，确定要关闭吗？')) {
-                this.showMemoList();
-                this.renderMemos();
-            }
-        } else {
-            this.showMemoList();
-            this.renderMemos();
-        }
     }
     
     saveLocalData() {
@@ -1010,7 +840,72 @@ class GitHubMemo {
         };
         
         localStorage.setItem('memoLocalData', JSON.stringify(data));
-        console.log('本地数据已保存，版本:', this.dataVersion, '文件夹:', this.folders.length, '备忘录:', this.memos.length);
+        console.log('本地数据已保存');
+    }
+    
+    // 分享配置功能
+    showShareConfigModal() {
+        console.log('显示分享配置模态框');
+        
+        if (!this.config.username || !this.config.repo || !this.config.token) {
+            alert('请先配置GitHub信息');
+            return;
+        }
+        
+        const shareConfig = {
+            username: this.config.username,
+            repo: this.config.repo,
+            token: this.config.token,
+            storageType: this.config.storageType,
+            sharedAt: new Date().toISOString(),
+            note: 'GitHub备忘录配置链接',
+            version: '1.0',
+            charset: 'UTF-8'
+        };
+        
+        try {
+            const jsonStr = JSON.stringify(shareConfig);
+            const base64Data = this._safeBtoa(jsonStr);
+            const encoded = encodeURIComponent(base64Data);
+            const baseUrl = window.location.origin + window.location.pathname;
+            const shareLink = `${baseUrl}?config=${encoded}`;
+            
+            // 创建简单的分享对话框
+            const linkInput = document.createElement('input');
+            linkInput.type = 'text';
+            linkInput.value = shareLink;
+            linkInput.style.width = '100%';
+            linkInput.style.margin = '10px 0';
+            
+            const copyBtn = document.createElement('button');
+            copyBtn.textContent = '复制链接';
+            copyBtn.onclick = () => {
+                linkInput.select();
+                document.execCommand('copy');
+                alert('链接已复制到剪贴板');
+            };
+            
+            const message = document.createElement('div');
+            message.innerHTML = `
+                <h3>分享配置</h3>
+                <p>复制以下链接分享给其他设备：</p>
+            `;
+            
+            const container = document.createElement('div');
+            container.style.padding = '20px';
+            container.appendChild(message);
+            container.appendChild(linkInput);
+            container.appendChild(copyBtn);
+            
+            if (confirm('是否要分享配置？')) {
+                document.body.appendChild(container);
+                linkInput.select();
+            }
+            
+        } catch (error) {
+            console.error('生成分享链接失败:', error);
+            alert('生成分享链接失败');
+        }
     }
     
     // 辅助方法
@@ -1049,7 +944,7 @@ class GitHubMemo {
         this.lastSyncTime = now.getTime();
     }
     
-    // 其他方法占位
+    // 其他必要方法
     showPasswordModal() {
         if (!this.passwordModal || !this.inputPassword) return;
         
@@ -1065,7 +960,7 @@ class GitHubMemo {
         if (!password) return;
         
         const storedPassword = this.folderPasswords.get(this.currentFolder.id);
-        const enteredPassword = this.safeBtoa(password);
+        const enteredPassword = this._safeBtoa(password);
         
         if (enteredPassword === storedPassword) {
             this.hideModal(this.passwordModal);
@@ -1087,7 +982,7 @@ class GitHubMemo {
         };
         
         if (this.confirmMessage) {
-            this.confirmMessage.textContent = `确定要删除备忘录"${this.escapeHtml(memo.title)}"吗？此操作无法撤销。`;
+            this.confirmMessage.textContent = `确定要删除备忘录"${this.escapeHtml(memo.title)}"吗？`;
         }
         
         this.showModal(this.confirmModal);
@@ -1107,9 +1002,8 @@ class GitHubMemo {
         if (this.confirmMessage) {
             let message = `确定要删除文件夹"${this.escapeHtml(folder.name)}"吗？`;
             if (folderMemos.length > 0) {
-                message += `\n文件夹中包含 ${folderMemos.length} 个备忘录，也将被删除。`;
+                message += `\n包含 ${folderMemos.length} 个备忘录`;
             }
-            message += '\n此操作无法撤销。';
             this.confirmMessage.textContent = message;
         }
         
@@ -1223,6 +1117,21 @@ class GitHubMemo {
         URL.revokeObjectURL(url);
         
         alert('数据导出成功');
+    }
+    
+    closeEditor() {
+        if (this.currentMemo && 
+            (this.memoTitle.value.trim() !== this.currentMemo.title || 
+             this.memoContent.value.trim() !== this.currentMemo.content)) {
+            
+            if (confirm('有未保存的更改，确定要关闭吗？')) {
+                this.showMemoList();
+                this.renderMemos();
+            }
+        } else {
+            this.showMemoList();
+            this.renderMemos();
+        }
     }
 }
 
